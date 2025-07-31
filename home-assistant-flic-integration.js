@@ -1,6 +1,6 @@
 // Home Assistant Media Integration with Flic App Module
 // This script integrates Home Assistant media devices using the REST API
-// with Flic buttons and Twist controllers for volume and playback control
+// with Flic buttons and Twist controllers for volume control
 
 const flicApp = require('flicapp');
 const http = require('http');
@@ -76,53 +76,102 @@ const HA_CONFIG = {
  * @param {Object} data - Request data for POST requests
  * @returns {Promise} - Response promise
  */
-function sendHARequest(endpoint, method = 'GET', data = null) {
+/**
+ * Send HTTP GET request to Home Assistant API
+ */
+function sendHARequest(endpoint) {
     const url = `${HA_CONFIG.baseUrl}${endpoint}`;
-    
-    console.log(`🌐 HTTP ${method} request: ${url}`);
+    console.log(`🌐 GET ${url}`);
     
     return new Promise((resolve, reject) => {
         const requestOptions = {
             url: url,
-            method: method,
+            method: 'GET',
             headers: {
                 'Authorization': `Bearer ${HA_CONFIG.token}`,
-                'Content-Type': 'application/json',
-                'User-Agent': 'Flic-Hub-Studio/1.0'
+                'Content-Type': 'application/json'
             }
         };
         
-        if (data && method === 'POST') {
-            requestOptions.data = JSON.stringify(data);
-        }
-        
         const timeoutId = setTimeout(() => {
             reject(new Error('Request timeout'));
-        }, 5000);
+        }, 10000);
         
         http.makeRequest(requestOptions, (error, result) => {
             clearTimeout(timeoutId);
             
             if (error) {
+                console.error(`❌ GET request failed:`, error);
                 reject(new Error(`HTTP request failed: ${error}`));
             } else {
                 const responseData = result || {};
                 const statusCode = responseData.statusCode || responseData.status || 200;
                 const content = responseData.content || responseData.body || responseData.data || '';
                 
-                resolve({ 
-                    success: statusCode >= 200 && statusCode < 300, 
-                    data: { 
-                        status: statusCode, 
+                resolve({
+                    success: statusCode >= 200 && statusCode < 300,
+                    data: {
+                        status: statusCode,
                         body: content,
                         headers: responseData.headers || {},
                         statusMessage: responseData.statusMessage || 'OK'
-                    } 
+                    }
                 });
             }
         });
     });
 }
+
+/**
+ * Send Home Assistant service call using simplified approach
+ * Based on working flic-hub-home-assistant-module from GitHub
+ */
+function callHAServiceDirect(domain, service, serviceData = {}) {
+    const endpoint = `/api/services/${domain}/${service}`;
+    const url = `${HA_CONFIG.baseUrl}${endpoint}`;
+    
+    console.log(`🔧 Calling ${domain}.${service}`);
+    
+    return new Promise((resolve, reject) => {
+        const jsonData = JSON.stringify(serviceData);
+        
+        const requestOptions = {
+            url: url,
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${HA_CONFIG.token}`,
+                'Content-Type': 'application/json'
+            },
+            content: jsonData
+        };
+        
+        const timeoutId = setTimeout(() => {
+            reject(new Error('Service call timeout'));
+        }, 10000);
+        
+        http.makeRequest(requestOptions, (error, result) => {
+            clearTimeout(timeoutId);
+            
+            if (error) {
+                console.log(`❌ Service call error: ${error}`);
+                reject(new Error(`Service call failed: ${error}`));
+                return;
+            }
+            
+            const statusCode = (result && (result.statusCode || result.status)) || 200;
+            
+            if (statusCode >= 200 && statusCode < 300) {
+                console.log(`✅ ${domain}.${service} successful`);
+                resolve({ success: true, statusCode });
+            } else {
+                console.log(`❌ ${domain}.${service} failed: ${statusCode}`);
+                reject(new Error(`Service call failed: ${statusCode}`));
+            }
+        });
+    });
+}
+
+
 
 /**
  * Get current state of a Home Assistant entity
@@ -154,18 +203,8 @@ async function getEntityState(entityId) {
  */
 async function callHAService(domain, service, serviceData = {}) {
     try {
-        const response = await sendHARequest(
-            `${HA_CONFIG.endpoints.services}${domain}/${service}`,
-            'POST',
-            serviceData
-        );
-        
-        if (response.success) {
-            console.log(`✅ Successfully called ${domain}.${service}`);
-            return response;
-        } else {
-            throw new Error(`Failed to call ${domain}.${service}`);
-        }
+        const result = await callHAServiceDirect(domain, service, serviceData);
+        return result;
     } catch (error) {
         console.error(`❌ Error calling ${domain}.${service}:`, error);
         throw error;
@@ -272,6 +311,116 @@ async function setMediaMute(deviceId, muted) {
     }
 }
 
+/**
+ * Pause media playback
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setMediaPause(deviceId) {
+    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    console.log(`Pausing playback for ${device.name}`);
+    
+    try {
+        const response = await callHAService('media_player', 'media_pause', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} playback paused`);
+            return response;
+        } else {
+            throw new Error(`Failed to pause playback for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error pausing playback for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Resume/play media playback
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setMediaPlay(deviceId) {
+    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    console.log(`Resuming playback for ${device.name}`);
+    
+    try {
+        const response = await callHAService('media_player', 'media_play', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} playback resumed`);
+            return response;
+        } else {
+            throw new Error(`Failed to resume playback for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error resuming playback for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Skip to next track
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setMediaNextTrack(deviceId) {
+    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    console.log(`Skipping to next track for ${device.name}`);
+    
+    try {
+        const response = await callHAService('media_player', 'media_next_track', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} skipped to next track`);
+            return response;
+        } else {
+            throw new Error(`Failed to skip track for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error skipping track for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Get current playback state of a media device
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise<string>} - Current state ('playing', 'paused', 'idle', 'off', etc.)
+ */
+async function getMediaPlaybackState(deviceId) {
+    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    try {
+        const stateData = await getEntityState(device.entityId);
+        return stateData.state;
+    } catch (error) {
+        console.error(`❌ Error getting playback state for ${device.name}:`, error);
+        throw error;
+    }
+}
+
 // ============================================================================
 // FLIC APP MODULE INTEGRATION
 // ============================================================================
@@ -346,13 +495,13 @@ flicApp.on('virtualDeviceUpdate', (metaData, values) => {
  * Handle volume up for specific device
  */
 async function handleDeviceVolumeUp(deviceId) {
-    // Check playback command cooldown before allowing volume changes
+    // Check cooldown
     const currentTime = Date.now();
     const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
     
     if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
         const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-        console.log(`⏳ Volume up command ignored - playback cooldown active (${remainingCooldown}s remaining)`);
+        console.log(`⏳ Volume up ignored - cooldown active (${remainingCooldown}s remaining)`);
         return;
     }
     
@@ -378,13 +527,13 @@ async function handleDeviceVolumeUp(deviceId) {
  * Handle volume down for specific device
  */
 async function handleDeviceVolumeDown(deviceId) {
-    // Check playback command cooldown before allowing volume changes
+    // Check cooldown
     const currentTime = Date.now();
     const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
     
     if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
         const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-        console.log(`⏳ Volume down command ignored - playback cooldown active (${remainingCooldown}s remaining)`);
+        console.log(`⏳ Volume down ignored - cooldown active (${remainingCooldown}s remaining)`);
         return;
     }
     
@@ -493,93 +642,24 @@ async function handleDevicePowerOff(deviceId) {
 }
 
 /**
- * Get playback status from media device
- * @param {Object} device - Device configuration
- * @returns {Promise<string>} - Playback status ('playing', 'paused', 'idle', or 'unknown')
- */
-async function getPlaybackStatus(device) {
-    try {
-        const stateData = await getEntityState(device.entityId);
-        
-        // Check if device is powered on first
-        if (stateData.state !== 'on') {
-            return 'off';
-        }
-        
-        return stateData.state || 'unknown';
-    } catch (error) {
-        console.error(`❌ Error getting playback status for ${device.name}:`, error);
-        return 'unknown';
-    }
-}
-
-/**
- * Pause playback on media device
- * @param {Object} device - Device configuration
- */
-async function pausePlayback(device) {
-    try {
-        await callHAService('media_player', 'media_pause', {
-            entity_id: device.entityId
-        });
-        
-        console.log(`⏸️ ${device.name} playback paused`);
-    } catch (error) {
-        console.error(`❌ Error pausing ${device.name}:`, error);
-    }
-}
-
-/**
- * Resume playback on media device
- * @param {Object} device - Device configuration
- */
-async function resumePlayback(device) {
-    try {
-        await callHAService('media_player', 'media_play', {
-            entity_id: device.entityId
-        });
-        
-        console.log(`▶️ ${device.name} playback resumed`);
-    } catch (error) {
-        console.error(`❌ Error resuming ${device.name}:`, error);
-    }
-}
-
-/**
- * Skip to next track on media device
- * @param {Object} device - Device configuration
- */
-async function skipToNextTrack(device) {
-    try {
-        await callHAService('media_player', 'media_next_track', {
-            entity_id: device.entityId
-        });
-        
-        console.log(`⏭️ ${device.name} skipped to next track`);
-    } catch (error) {
-        console.error(`❌ Error skipping track on ${device.name}:`, error);
-    }
-}
-
-/**
- * Handle playback device updates for playback control
+ * Handle media device updates for volume control
  * @param {string} deviceId - Virtual device ID
  * @param {Object} values - Values from Flic Twist
  */
+/**
+ * Handle playback device updates for playback control
+ */
 async function handlePlaybackDeviceUpdate(deviceId, values) {
-    // Find the device configuration for this device
     const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
     if (!device || device.type !== 'playback') {
         return;
     }
     
     const volumeChange = values.volume - 0.5; // 0.5 is the center position
-    
-    // Check if this is a playback command (not just volume change)
     const isPlaybackCommand = Math.abs(volumeChange) > 0.1; // Threshold to detect intentional movement
     
     if (isPlaybackCommand) {
-        // Check playback command cooldown
+        // Check cooldown
         const currentTime = Date.now();
         const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
         
@@ -594,31 +674,33 @@ async function handlePlaybackDeviceUpdate(deviceId, values) {
             return;
         }
         
-        // Apply playback control
-        const mediaDevice = HA_CONFIG.mediaDevices.find(d => d.type === 'media_player');
-        if (mediaDevice) {
-            try {
-                const playbackStatus = await getPlaybackStatus(mediaDevice);
+        // Playback control based on twist direction
+        try {
+            if (volumeChange < 0) {
+                // Twist down/left = Pause
+                await setMediaPause(deviceId);
+            } else if (volumeChange > 0) {
+                // Twist up/right = Smart play/skip logic
+                const currentState = await getMediaPlaybackState(deviceId);
+                console.log(`📊 Current playback state: ${currentState}`);
                 
-                if (volumeChange < 0) {
-                    // Decreasing value = pause playback
-                    if (playbackStatus === 'playing') {
-                        await pausePlayback(mediaDevice);
-                    }
-                } else if (volumeChange > 0) {
-                    // Increasing value = resume or skip
-                    if (playbackStatus === 'paused') {
-                        await resumePlayback(mediaDevice);
-                    } else if (playbackStatus === 'playing') {
-                        await skipToNextTrack(mediaDevice);
-                    }
+                if (currentState === 'paused') {
+                    // If paused, resume playback
+                    await setMediaPlay(deviceId);
+                } else if (currentState === 'playing') {
+                    // If playing, skip to next track
+                    await setMediaNextTrack(deviceId);
+                } else {
+                    // For other states (idle, off, etc.), try to start playback
+                    console.log(`📱 Device in ${currentState} state, attempting to start playback`);
+                    await setMediaPlay(deviceId);
                 }
-            } catch (error) {
-                console.error(`❌ Error handling playback control:`, error);
             }
+        } catch (error) {
+            console.error(`❌ Error executing playback command for ${device.name}:`, error);
         }
         
-        // Update last command timestamp only for playback commands
+        // Update cooldown
         lastPlaybackCommandTime = currentTime;
     }
     
@@ -628,25 +710,19 @@ async function handlePlaybackDeviceUpdate(deviceId, values) {
     });
 }
 
-/**
- * Handle media device updates for volume control
- * @param {string} deviceId - Virtual device ID
- * @param {Object} values - Values from Flic Twist
- */
 async function handleMediaDeviceUpdate(deviceId, values) {
     if (values.volume !== undefined) {
-        // Check playback command cooldown before allowing volume changes
+        // Check cooldown
         const currentTime = Date.now();
         const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
         
         if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
             const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-            console.log(`⏳ Volume change ignored - playback cooldown active (${remainingCooldown}s remaining)`);
+            console.log(`⏳ Volume change ignored - cooldown active (${remainingCooldown}s remaining)`);
             return;
         }
         
         const volumePercentage = Math.round(values.volume * 100);
-        const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
         
         try {
             await setMediaVolume(deviceId, volumePercentage);
@@ -666,11 +742,6 @@ async function handleMediaDeviceUpdate(deviceId, values) {
  * @returns {Promise<number>} - Current volume percentage
  */
 async function getCurrentVolumeAndUpdate(device) {
-    // Skip playback devices as they don't have volume
-    if (device.type === 'playback') {
-        return null;
-    }
-    
     try {
         const stateData = await getEntityState(device.entityId);
         const currentVolume = stateData.attributes.volume_level * 100; // Convert to percentage
@@ -688,20 +759,39 @@ async function getCurrentVolumeAndUpdate(device) {
 }
 
 /**
+ * Create virtual devices for Flic Twist integration
+ */
+function createVirtualDevices() {
+    console.log('🎛️ Creating virtual devices...');
+    
+    HA_CONFIG.mediaDevices.forEach(device => {
+        if (device.type === 'media_player' || device.type === 'playback') {
+            // Create Speaker virtual device for volume/playback control
+            const virtualDevice = flicApp.createVirtualDevice(device.id, 'Speaker', device.name);
+            console.log(`✅ Created virtual device: ${device.name}`);
+        }
+    });
+}
+
+/**
  * Initialize virtual device states with current Home Assistant volumes
  */
 async function initializeVirtualDeviceStates() {
+    console.log('🔄 Initializing virtual device states...');
+    
     for (const device of HA_CONFIG.mediaDevices) {
-        if (device.type === 'playback') {
-            // Create virtual playback device for playback control
+        if (device.type === 'media_player') {
+            // Get current volume for media devices
+            await getCurrentVolumeAndUpdate(device);
+        } else if (device.type === 'playback') {
+            // Set playback device to center position
             flicApp.virtualDeviceUpdateState('Speaker', device.id, {
                 volume: 0.5
             });
-        } else {
-            // Get current volume for regular media devices
-            await getCurrentVolumeAndUpdate(device);
         }
     }
+    
+    console.log('✅ Virtual device states initialized');
 }
 
 // ============================================================================
@@ -733,8 +823,45 @@ async function initializeHAIntegration() {
     console.log('- "{device-id} on" - Turn device on (e.g., "livingroom_tv on")');
     console.log('- "{device-id} off" - Turn device off (e.g., "livingroom_tv off")');
     
+    // Test HTTP connectivity
+    await testHTTPConnectivity();
+    
+    // Create virtual devices for Flic Twist integration
+    createVirtualDevices();
+    
     // Initialize virtual device states with current volumes
     await initializeVirtualDeviceStates();
+}
+
+/**
+ * Test HTTP connectivity to Home Assistant
+ */
+async function testHTTPConnectivity() {
+    console.log('🧪 Testing connectivity...');
+    
+    try {
+        // Test basic API endpoint
+        const response = await sendHARequest('/api/');
+        console.log('✅ Home Assistant API connected');
+        
+        // Test service calls
+
+        try {
+            await callHAServiceDirect('persistent_notification', 'create', {
+                message: 'Flic Hub Studio connected',
+                title: 'Flic Test'
+            });
+            console.log('✅ Service calls working');
+        } catch (error) {
+            console.error('❌ Service call test failed:', error);
+        }
+    } catch (error) {
+        console.error('❌ Home Assistant API connectivity test failed:', error);
+        console.log('🔧 Please check:');
+        console.log('   - Home Assistant IP address is correct');
+        console.log('   - Access token is valid');
+        console.log('   - Network connectivity');
+    }
 }
 
 // Start the integration
