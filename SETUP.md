@@ -5,13 +5,14 @@ This integration allows you to control Home Assistant media devices using Flic b
 ## Features
 
 - **Volume Control**: Precise volume control using Flic Twist controllers
-- **Playback Control**: Pause, resume, and skip tracks using configurable playback devices
+- **Intelligent Playback Control**: State-aware pause, resume, and skip functionality
 - **Multi-Device Support**: Control multiple media devices (TVs, speakers, radios)
 - **Device-Specific Actions**: Use action messages to control specific devices
 - **Smart Cooldown**: 2.5-second cooldown prevents rapid-fire commands
 - **State Synchronization**: Virtual devices stay in sync with actual device states
 - **Power Control**: Turn devices on/off and toggle power states
 - **Mute Control**: Toggle mute states with smart detection
+- **Enhanced Error Handling**: Comprehensive error recovery and detailed logging
 
 ## Prerequisites
 
@@ -185,10 +186,14 @@ Configure these action messages in the Flic app:
 
 ### Playback Control
 
-- **Flic Twist Down**: Pause playback
-- **Flic Twist Up**: 
-  - If paused → Resume playback
-  - If playing → Skip to next track
+The script uses intelligent state-based playback control:
+
+- **Flic Twist Down**: Always pause playback
+- **Flic Twist Up** (Smart Logic):
+  - **If paused** → Resume playback
+  - **If playing** → Skip to next track  
+  - **If idle/off/other** → Start playback
+- **State Detection**: Automatically checks current playback state before taking action
 - **Cooldown**: 2.5-second cooldown prevents rapid commands
 
 ### Power Control
@@ -215,9 +220,14 @@ The integration uses these Home Assistant API endpoints:
 - `POST /api/services/media_player/turn_on` - Turn device on
 - `POST /api/services/media_player/turn_off` - Turn device off
 - `POST /api/services/media_player/volume_mute` - Mute/unmute device
-- `POST /api/services/media_player/media_play` - Resume playback
+- `POST /api/services/media_player/media_play` - Resume/start playback
 - `POST /api/services/media_player/media_pause` - Pause playback
 - `POST /api/services/media_player/media_next_track` - Skip to next track
+
+**Enhanced Playback Logic:**
+The script intelligently calls different services based on current playback state:
+- Checks current state via `GET /api/states/<entity_id>`
+- Uses state-specific actions (pause → play, playing → skip, idle → play)
 
 **Authentication:**
 - `Authorization: Bearer YOUR_TOKEN` header required for all requests
@@ -305,13 +315,17 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 
 ### Debug Information
 
-The script provides clean, minimal logging:
+The script provides clean, detailed logging:
 
 ```
+📊 Current playback state: playing
 ⏸️ Living Room TV playback paused
 ▶️ Living Room TV playback resumed
 ⏭️ Living Room TV skipped to next track
+📱 Device in idle state, attempting to start playback
 ⏳ Playback command ignored - cooldown active (2s remaining)
+✅ Playback Control playback resumed
+❌ Error executing playback command for Living Room TV: [error details]
 ```
 
 ## Supported Home Assistant Media Devices
@@ -353,12 +367,31 @@ Virtual devices automatically sync with actual device states:
 Comprehensive error handling with detailed logging:
 
 ```javascript
+// Volume Control Error Handling
 try {
     await setMediaVolume(deviceId, volume);
 } catch (error) {
     console.error(`❌ Error setting volume for ${device.name}:`, error);
 }
+
+// Enhanced Playback Error Handling
+try {
+    const currentState = await getMediaPlaybackState(deviceId);
+    if (currentState === 'paused') {
+        await setMediaPlay(deviceId);
+    } else if (currentState === 'playing') {
+        await setMediaNextTrack(deviceId);
+    }
+} catch (error) {
+    console.error(`❌ Error executing playback command for ${device.name}:`, error);
+}
 ```
+
+**Error Recovery Features:**
+- State validation before executing commands
+- Graceful fallback for unknown device states
+- Detailed error messages with device context
+- Cooldown protection prevents error cascading
 
 ## Contributing
 
