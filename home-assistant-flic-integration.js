@@ -17,33 +17,98 @@ const HA_CONFIG = {
     baseUrl: 'http://HOME_ASSISTANT_IP:8123',
     token: 'YOUR_LONG_LIVED_ACCESS_TOKEN',
     
-    // Media devices configuration
-    mediaDevices: [
-        { 
-            id: 'livingroom_tv', 
-            entityId: 'media_player.living_room_tv',
-            name: 'Living Room TV',
-            type: 'media_player'
-        },
-        { 
-            id: 'bedroom_speaker', 
-            entityId: 'media_player.bedroom_speaker',
-            name: 'Bedroom Speaker',
-            type: 'media_player'
-        },
-        { 
-            id: 'kitchen_radio', 
-            entityId: 'media_player.kitchen_radio',
-            name: 'Kitchen Radio',
-            type: 'media_player'
-        },
-        { 
-            id: 'playback_control', 
-            entityId: 'media_player.living_room_tv', // Uses same device for playback control
-            name: 'Playback Control',
-            type: 'playback'
-        }
-    ],
+    // Device configuration by category
+    devices: {
+        // Media devices (TVs, speakers, etc.)
+        media: [
+            { 
+                id: 'livingroom_tv', 
+                entityId: 'media_player.living_room_tv',
+                name: 'Living Room TV',
+                type: 'media_player'
+            },
+            { 
+                id: 'bedroom_speaker', 
+                entityId: 'media_player.bedroom_speaker',
+                name: 'Bedroom Speaker',
+                type: 'media_player'
+            },
+            { 
+                id: 'kitchen_radio', 
+                entityId: 'media_player.kitchen_radio',
+                name: 'Kitchen Radio',
+                type: 'media_player'
+            },
+            { 
+                id: 'playback_control', 
+                entityId: 'media_player.living_room_tv', // Uses same device for playback control
+                name: 'Playback Control',
+                type: 'playback'
+            }
+        ],
+        
+        // Light devices (dimmable and color lights)
+        lights: [
+            {
+                id: 'living_room_light',
+                entityId: 'light.living_room_ceiling',
+                name: 'Living Room Light',
+                type: 'light'
+            },
+            {
+                id: 'bedroom_light',
+                entityId: 'light.bedroom_ceiling',
+                name: 'Bedroom Light', 
+                type: 'light'
+            },
+            {
+                id: 'kitchen_color_light',
+                entityId: 'light.kitchen_color_strip',
+                name: 'Kitchen Color Light',
+                type: 'color_light'
+            }
+        ],
+        
+        // Climate devices (thermostats, ACs)
+        climate: [
+            {
+                id: 'living_room_thermostat',
+                entityId: 'climate.living_room',
+                name: 'Living Room Thermostat',
+                type: 'climate',
+                tempRange: { min: 16, max: 30 } // °C
+            },
+            {
+                id: 'bedroom_ac',
+                entityId: 'climate.bedroom_ac',
+                name: 'Bedroom AC',
+                type: 'climate',
+                tempRange: { min: 18, max: 28 } // °C
+            }
+        ],
+        
+        // Blind/Cover devices (blinds, curtains, shutters)
+        blinds: [
+            {
+                id: 'living_room_blinds',
+                entityId: 'cover.living_room_blinds',
+                name: 'Living Room Blinds',
+                type: 'blind'
+            },
+            {
+                id: 'bedroom_curtains',
+                entityId: 'cover.bedroom_curtains',
+                name: 'Bedroom Curtains',
+                type: 'blind'
+            },
+            {
+                id: 'kitchen_shutters',
+                entityId: 'cover.kitchen_shutters',
+                name: 'Kitchen Shutters',
+                type: 'blind'
+            }
+        ]
+    },
     
     // API endpoints
     endpoints: {
@@ -52,16 +117,21 @@ const HA_CONFIG = {
         config: '/api/config'
     },
     
-    // Volume ranges (Home Assistant uses 0-1 for volume)
-    volumeRanges: {
-        media_player: {
-            min: 0,
-            max: 1
-        },
-        playback: {
-            min: 0,
-            max: 1
-        }
+    // Value ranges for different device types
+    valueRanges: {
+        // Media devices (Home Assistant uses 0-1 for volume)
+        media_player: { min: 0, max: 1 },
+        playback: { min: 0, max: 1 },
+        
+        // Light devices (Home Assistant uses 0-255 for brightness)
+        light: { min: 0, max: 255 },
+        color_light: { min: 0, max: 255 },
+        
+        // Climate devices (temperature ranges vary by device)
+        climate: { min: 16, max: 30 }, // Default range, can be overridden per device
+        
+        // Blind devices (Home Assistant uses 0-100 for position percentage)
+        blind: { min: 0, max: 100 } // 0 = closed, 100 = open
     }
 };
 
@@ -218,7 +288,7 @@ async function callHAService(domain, service, serviceData = {}) {
  * @returns {Promise} - Response promise
  */
 async function setMediaVolume(deviceId, volume) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -253,7 +323,7 @@ async function setMediaVolume(deviceId, volume) {
  * @returns {Promise} - Response promise
  */
 async function setMediaPower(deviceId, powerOn) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -285,7 +355,7 @@ async function setMediaPower(deviceId, powerOn) {
  * @returns {Promise} - Response promise
  */
 async function setMediaMute(deviceId, muted) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -317,7 +387,7 @@ async function setMediaMute(deviceId, muted) {
  * @returns {Promise} - Response promise
  */
 async function setMediaPause(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -347,7 +417,7 @@ async function setMediaPause(deviceId) {
  * @returns {Promise} - Response promise
  */
 async function setMediaPlay(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -377,7 +447,7 @@ async function setMediaPlay(deviceId) {
  * @returns {Promise} - Response promise
  */
 async function setMediaNextTrack(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -402,12 +472,344 @@ async function setMediaNextTrack(deviceId) {
 }
 
 /**
+ * Find a device by ID across all device categories
+ * @param {string} deviceId - Device identifier
+ * @returns {Object|null} - Device object or null if not found
+ */
+function findDevice(deviceId) {
+    // Search across all device categories
+    for (const category of Object.values(HA_CONFIG.devices)) {
+        const device = category.find(d => d.id === deviceId);
+        if (device) {
+            return device;
+        }
+    }
+    return null;
+}
+
+// ============================================================================
+// LIGHT CONTROL FUNCTIONS
+// ============================================================================
+
+/**
+ * Set brightness for a light device
+ * @param {string} deviceId - Device identifier
+ * @param {number} brightness - Brightness level (0-255)
+ * @returns {Promise} - Response promise
+ */
+async function setLightBrightness(deviceId, brightness) {
+    const device = findDevice(deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    // Clamp brightness to valid range
+    const clampedBrightness = Math.max(0, Math.min(255, Math.round(brightness)));
+    console.log(`Setting brightness for ${device.name} to ${clampedBrightness}`);
+    
+    try {
+        const response = await callHAService('light', 'turn_on', {
+            entity_id: device.entityId,
+            brightness: clampedBrightness
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} brightness set to ${clampedBrightness}`);
+            // Update virtual device state
+            await getCurrentBrightnessAndUpdate(device);
+            return response;
+        } else {
+            throw new Error(`Failed to set brightness for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting brightness for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Set power state for a light device
+ * @param {string} deviceId - Device identifier
+ * @param {boolean} powerOn - True to turn on, false to turn off
+ * @returns {Promise} - Response promise
+ */
+async function setLightPower(deviceId, powerOn) {
+    const device = findDevice(deviceId);
+    if (!device) {
+        throw new Error(`Device ${deviceId} not found`);
+    }
+    
+    const service = powerOn ? 'turn_on' : 'turn_off';
+    console.log(`Setting power for ${device.name} to ${powerOn ? 'on' : 'off'}`);
+    
+    try {
+        const response = await callHAService('light', service, {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} turned ${powerOn ? 'on' : 'off'}`);
+            // Update virtual device state
+            await getCurrentBrightnessAndUpdate(device);
+            return response;
+        } else {
+            throw new Error(`Failed to set power for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting power for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Set color for a color light device
+ * @param {string} deviceId - Device identifier
+ * @param {Array} rgbColor - RGB color array [r, g, b] (0-255 each)
+ * @returns {Promise} - Response promise
+ */
+async function setLightColor(deviceId, rgbColor) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'color_light') {
+        throw new Error(`Color light device ${deviceId} not found`);
+    }
+    
+    // Validate RGB values
+    const [r, g, b] = rgbColor.map(c => Math.max(0, Math.min(255, Math.round(c))));
+    console.log(`Setting color for ${device.name} to RGB(${r}, ${g}, ${b})`);
+    
+    try {
+        const response = await callHAService('light', 'turn_on', {
+            entity_id: device.entityId,
+            rgb_color: [r, g, b]
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} color set to RGB(${r}, ${g}, ${b})`);
+            return response;
+        } else {
+            throw new Error(`Failed to set color for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting color for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+// ============================================================================
+// CLIMATE CONTROL FUNCTIONS
+// ============================================================================
+
+/**
+ * Set temperature for a climate device
+ * @param {string} deviceId - Device identifier
+ * @param {number} temperature - Target temperature in °C
+ * @returns {Promise} - Response promise
+ */
+async function setClimateTemperature(deviceId, temperature) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'climate') {
+        throw new Error(`Climate device ${deviceId} not found`);
+    }
+    
+    // Use device-specific temperature range or default
+    const tempRange = device.tempRange || HA_CONFIG.valueRanges.climate;
+    const clampedTemp = Math.max(tempRange.min, Math.min(tempRange.max, Math.round(temperature * 10) / 10));
+    
+    console.log(`Setting temperature for ${device.name} to ${clampedTemp}°C`);
+    
+    try {
+        const response = await callHAService('climate', 'set_temperature', {
+            entity_id: device.entityId,
+            temperature: clampedTemp
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} temperature set to ${clampedTemp}°C`);
+            // Update virtual device state
+            await getCurrentTemperatureAndUpdate(device);
+            return response;
+        } else {
+            throw new Error(`Failed to set temperature for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting temperature for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Set HVAC mode for a climate device
+ * @param {string} deviceId - Device identifier
+ * @param {string} mode - HVAC mode ('heat', 'cool', 'auto', 'off', etc.)
+ * @returns {Promise} - Response promise
+ */
+async function setClimateMode(deviceId, mode) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'climate') {
+        throw new Error(`Climate device ${deviceId} not found`);
+    }
+    
+    console.log(`Setting HVAC mode for ${device.name} to ${mode}`);
+    
+    try {
+        const response = await callHAService('climate', 'set_hvac_mode', {
+            entity_id: device.entityId,
+            hvac_mode: mode
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} HVAC mode set to ${mode}`);
+            return response;
+        } else {
+            throw new Error(`Failed to set HVAC mode for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting HVAC mode for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+// ============================================================================
+// BLIND CONTROL FUNCTIONS
+// ============================================================================
+
+/**
+ * Set position for a blind/cover device
+ * @param {string} deviceId - Device identifier
+ * @param {number} position - Position percentage (0-100, 0=closed, 100=open)
+ * @returns {Promise} - Response promise
+ */
+async function setBlindPosition(deviceId, position) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        throw new Error(`Blind device ${deviceId} not found`);
+    }
+    
+    // Clamp position to valid range
+    const clampedPosition = Math.max(0, Math.min(100, Math.round(position)));
+    console.log(`Setting position for ${device.name} to ${clampedPosition}%`);
+    
+    try {
+        const response = await callHAService('cover', 'set_cover_position', {
+            entity_id: device.entityId,
+            position: clampedPosition
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} position set to ${clampedPosition}%`);
+            // Update virtual device state
+            await getCurrentBlindPositionAndUpdate(device);
+            return response;
+        } else {
+            throw new Error(`Failed to set position for ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error setting position for ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Open a blind/cover device
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setBlindOpen(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        throw new Error(`Blind device ${deviceId} not found`);
+    }
+    
+    console.log(`Opening ${device.name}`);
+    
+    try {
+        const response = await callHAService('cover', 'open_cover', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} opened`);
+            // Update virtual device state
+            setTimeout(() => getCurrentBlindPositionAndUpdate(device), 1000); // Delay to allow movement
+            return response;
+        } else {
+            throw new Error(`Failed to open ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error opening ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Close a blind/cover device
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setBlindClose(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        throw new Error(`Blind device ${deviceId} not found`);
+    }
+    
+    console.log(`Closing ${device.name}`);
+    
+    try {
+        const response = await callHAService('cover', 'close_cover', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} closed`);
+            // Update virtual device state
+            setTimeout(() => getCurrentBlindPositionAndUpdate(device), 1000); // Delay to allow movement
+            return response;
+        } else {
+            throw new Error(`Failed to close ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error closing ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
+ * Stop a blind/cover device
+ * @param {string} deviceId - Device identifier
+ * @returns {Promise} - Response promise
+ */
+async function setBlindStop(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        throw new Error(`Blind device ${deviceId} not found`);
+    }
+    
+    console.log(`Stopping ${device.name}`);
+    
+    try {
+        const response = await callHAService('cover', 'stop_cover', {
+            entity_id: device.entityId
+        });
+        
+        if (response.success) {
+            console.log(`✅ ${device.name} stopped`);
+            return response;
+        } else {
+            throw new Error(`Failed to stop ${device.name}`);
+        }
+    } catch (error) {
+        console.error(`❌ Error stopping ${device.name}:`, error);
+        throw error;
+    }
+}
+
+/**
  * Get current playback state of a media device
  * @param {string} deviceId - Device identifier
  * @returns {Promise<string>} - Current state ('playing', 'paused', 'idle', 'off', etc.)
  */
 async function getMediaPlaybackState(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
@@ -430,7 +832,7 @@ let lastPlaybackCommandTime = 0;
 const PLAYBACK_COOLDOWN_MS = 2500; // 2.5 seconds
 
 // Handle action messages from Flic app
-flicApp.on('actionMessage', (message) => {
+flicApp.on('actionMessage', async (message) => {
     console.log('Received action message:', message);
     
     // Parse device-specific commands: "{device-id} {action}"
@@ -440,35 +842,91 @@ flicApp.on('actionMessage', (message) => {
         const action = parts.slice(1).join(' ');
         
         // Find the device by device ID
-        const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+        const device = findDevice(deviceId);
         if (!device) {
             console.log(`Unknown device: ${deviceId}`);
             return;
         }
         
-        // Handle device-specific actions
-        switch (action) {
-            case 'volume up':
-                handleDeviceVolumeUp(deviceId);
-                break;
-            case 'volume down':
-                handleDeviceVolumeDown(deviceId);
-                break;
-            case 'mute':
-                handleDeviceMuteToggle(deviceId);
-                break;
-            case 'power':
-                handleDevicePowerToggle(deviceId);
-                break;
-            case 'on':
-                handleDevicePowerOn(deviceId);
-                break;
-            case 'off':
-                handleDevicePowerOff(deviceId);
-                break;
-            default:
-                console.log(`Unknown action for device ${deviceId}: ${action}`);
-                break;
+        try {
+            // Handle device-specific actions
+            switch (action) {
+                // Media device actions
+                case 'volume up':
+                    await handleDeviceVolumeUp(deviceId);
+                    break;
+                case 'volume down':
+                    await handleDeviceVolumeDown(deviceId);
+                    break;
+                case 'mute':
+                    await handleDeviceMuteToggle(deviceId);
+                    break;
+                
+                // Light device actions
+                case 'brightness up':
+                    await handleDeviceBrightnessUp(deviceId);
+                    break;
+                case 'brightness down':
+                    await handleDeviceBrightnessDown(deviceId);
+                    break;
+                case 'bright':
+                    await handleDeviceSetBright(deviceId);
+                    break;
+                case 'dim':
+                    await handleDeviceSetDim(deviceId);
+                    break;
+                
+                // Climate device actions
+                case 'temp up':
+                    await handleDeviceTemperatureUp(deviceId);
+                    break;
+                case 'temp down':
+                    await handleDeviceTemperatureDown(deviceId);
+                    break;
+                case 'heat':
+                    await handleDeviceSetMode(deviceId, 'heat');
+                    break;
+                case 'cool':
+                    await handleDeviceSetMode(deviceId, 'cool');
+                    break;
+                case 'auto':
+                    await handleDeviceSetMode(deviceId, 'auto');
+                    break;
+                
+                // Blind device actions
+                case 'open':
+                    await handleDeviceBlindOpen(deviceId);
+                    break;
+                case 'close':
+                    await handleDeviceBlindClose(deviceId);
+                    break;
+                case 'stop':
+                    await handleDeviceBlindStop(deviceId);
+                    break;
+                case 'position up':
+                    await handleDeviceBlindUp(deviceId);
+                    break;
+                case 'position down':
+                    await handleDeviceBlindDown(deviceId);
+                    break;
+                
+                // Universal device actions (all device types support these)
+                case 'power':
+                    await handleDevicePowerToggle(deviceId);
+                    break;
+                case 'on':
+                    await handleDevicePowerOn(deviceId);
+                    break;
+                case 'off':
+                    await handleDevicePowerOff(deviceId);
+                    break;
+                
+                default:
+                    console.log(`Unknown action for device ${deviceId}: ${action}`);
+                    break;
+            }
+        } catch (error) {
+            console.error(`❌ Error executing action "${action}" for device ${deviceId}:`, error);
         }
     } else {
         console.log('Invalid action message format. Expected: "{device-id} {action}"');
@@ -476,14 +934,36 @@ flicApp.on('actionMessage', (message) => {
 });
 
 // Handle virtual device updates from Flic Twist controllers
-flicApp.on('virtualDeviceUpdate', (metaData, values) => {
-    if (metaData.dimmableType === 'Speaker') {
-        const device = HA_CONFIG.mediaDevices.find(d => d.id === metaData.virtualDeviceId);
-        if (device && device.type === 'playback') {
-            handlePlaybackDeviceUpdate(metaData.virtualDeviceId, values);
-        } else {
-            handleMediaDeviceUpdate(metaData.virtualDeviceId, values);
+flicApp.on('virtualDeviceUpdate', async (metaData, values) => {
+    const device = findDevice(metaData.virtualDeviceId);
+    if (!device) {
+        console.error(`❌ Device not found: ${metaData.virtualDeviceId}`);
+        return;
+    }
+    
+    try {
+        if (metaData.dimmableType === 'Speaker') {
+            // Handle media devices (Speaker virtual devices)
+            if (device.type === 'playback') {
+                await handlePlaybackDeviceUpdate(metaData.virtualDeviceId, values);
+            } else if (device.type === 'media_player') {
+                await handleMediaDeviceUpdate(metaData.virtualDeviceId, values);
+            }
+        } else if (metaData.dimmableType === 'Light') {
+            // Handle light devices (Light virtual devices)
+            if (device.type === 'light' || device.type === 'color_light') {
+                await handleLightDeviceUpdate(metaData.virtualDeviceId, values);
+            }
+        } else if (metaData.dimmableType === 'Blind') {
+            // Handle climate and blind devices (both use Blind virtual devices with position)
+            if (device.type === 'climate') {
+                await handleClimateDeviceUpdate(metaData.virtualDeviceId, values);
+            } else if (device.type === 'blind') {
+                await handleBlindDeviceUpdate(metaData.virtualDeviceId, values);
+            }
         }
+    } catch (error) {
+        console.error(`❌ Error handling virtual device update for ${device.name}:`, error);
     }
 });
 
@@ -505,7 +985,7 @@ async function handleDeviceVolumeUp(deviceId) {
         return;
     }
     
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
@@ -537,7 +1017,7 @@ async function handleDeviceVolumeDown(deviceId) {
         return;
     }
     
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
@@ -559,7 +1039,7 @@ async function handleDeviceVolumeDown(deviceId) {
  * Handle mute toggle for specific device
  */
 async function handleDeviceMuteToggle(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
@@ -581,10 +1061,10 @@ async function handleDeviceMuteToggle(deviceId) {
 }
 
 /**
- * Handle power toggle for specific device
+ * Handle power toggle for specific device (works with all device types)
  */
 async function handleDevicePowerToggle(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
@@ -595,9 +1075,24 @@ async function handleDevicePowerToggle(deviceId) {
         const stateData = await getEntityState(device.entityId);
         const isCurrentlyOn = stateData.state === 'on';
         
-        // Toggle power status
-        const newPowerState = isCurrentlyOn ? false : true;
-        await setMediaPower(deviceId, newPowerState);
+        // Toggle power status based on device type
+        const newPowerState = !isCurrentlyOn;
+        
+        if (device.type === 'media_player') {
+            await setMediaPower(deviceId, newPowerState);
+        } else if (device.type === 'light' || device.type === 'color_light') {
+            await setLightPower(deviceId, newPowerState);
+        } else if (device.type === 'climate') {
+            // For climate devices, use HVAC mode instead of power
+            await setClimateMode(deviceId, newPowerState ? 'auto' : 'off');
+        } else if (device.type === 'blind') {
+            // For blind devices, open/close instead of power
+            if (newPowerState) {
+                await setBlindOpen(deviceId);
+            } else {
+                await setBlindClose(deviceId);
+            }
+        }
         
         console.log(`✅ ${device.name} turned ${newPowerState ? 'on' : 'off'}`);
     } catch (error) {
@@ -606,17 +1101,25 @@ async function handleDevicePowerToggle(deviceId) {
 }
 
 /**
- * Handle power on for specific device
+ * Handle power on for specific device (works with all device types)
  */
 async function handleDevicePowerOn(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
     }
     
     try {
-        await setMediaPower(deviceId, true);
+        if (device.type === 'media_player') {
+            await setMediaPower(deviceId, true);
+        } else if (device.type === 'light' || device.type === 'color_light') {
+            await setLightPower(deviceId, true);
+        } else if (device.type === 'climate') {
+            await setClimateMode(deviceId, 'auto');
+        } else if (device.type === 'blind') {
+            await setBlindOpen(deviceId);
+        }
         console.log(`✅ ${device.name} turned on`);
     } catch (error) {
         console.error(`❌ Error turning on ${device.name}:`, error);
@@ -624,20 +1127,272 @@ async function handleDevicePowerOn(deviceId) {
 }
 
 /**
- * Handle power off for specific device
+ * Handle power off for specific device (works with all device types)
  */
 async function handleDevicePowerOff(deviceId) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device) {
         console.error(`Device not found: ${deviceId}`);
         return;
     }
     
     try {
-        await setMediaPower(deviceId, false);
+        if (device.type === 'media_player') {
+            await setMediaPower(deviceId, false);
+        } else if (device.type === 'light' || device.type === 'color_light') {
+            await setLightPower(deviceId, false);
+        } else if (device.type === 'climate') {
+            await setClimateMode(deviceId, 'off');
+        } else if (device.type === 'blind') {
+            await setBlindClose(deviceId);
+        }
         console.log(`✅ ${device.name} turned off`);
     } catch (error) {
         console.error(`❌ Error turning off ${device.name}:`, error);
+    }
+}
+
+// ============================================================================
+// LIGHT ACTION HANDLERS
+// ============================================================================
+
+/**
+ * Handle brightness up for light devices
+ */
+async function handleDeviceBrightnessUp(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || (device.type !== 'light' && device.type !== 'color_light')) {
+        console.error(`Light device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current brightness
+        const currentBrightness = await getCurrentBrightnessAndUpdate(device);
+        const newBrightness = Math.min(255, (currentBrightness || 0) + 25); // Increase by ~10%
+        
+        await setLightBrightness(deviceId, newBrightness);
+    } catch (error) {
+        console.error(`❌ Error increasing brightness for ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle brightness down for light devices
+ */
+async function handleDeviceBrightnessDown(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || (device.type !== 'light' && device.type !== 'color_light')) {
+        console.error(`Light device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current brightness
+        const currentBrightness = await getCurrentBrightnessAndUpdate(device);
+        const newBrightness = Math.max(0, (currentBrightness || 0) - 25); // Decrease by ~10%
+        
+        if (newBrightness === 0) {
+            await setLightPower(deviceId, false);
+        } else {
+            await setLightBrightness(deviceId, newBrightness);
+        }
+    } catch (error) {
+        console.error(`❌ Error decreasing brightness for ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle set bright for light devices (100% brightness)
+ */
+async function handleDeviceSetBright(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || (device.type !== 'light' && device.type !== 'color_light')) {
+        console.error(`Light device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setLightBrightness(deviceId, 255); // 100% brightness
+    } catch (error) {
+        console.error(`❌ Error setting bright for ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle set dim for light devices (20% brightness)
+ */
+async function handleDeviceSetDim(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || (device.type !== 'light' && device.type !== 'color_light')) {
+        console.error(`Light device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setLightBrightness(deviceId, 51); // ~20% brightness
+    } catch (error) {
+        console.error(`❌ Error setting dim for ${device.name}:`, error);
+    }
+}
+
+// ============================================================================
+// CLIMATE ACTION HANDLERS
+// ============================================================================
+
+/**
+ * Handle temperature up for climate devices
+ */
+async function handleDeviceTemperatureUp(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'climate') {
+        console.error(`Climate device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current temperature
+        const currentTemp = await getCurrentTemperatureAndUpdate(device);
+        const newTemp = (currentTemp || 20) + 1; // Increase by 1°C
+        
+        await setClimateTemperature(deviceId, newTemp);
+    } catch (error) {
+        console.error(`❌ Error increasing temperature for ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle temperature down for climate devices
+ */
+async function handleDeviceTemperatureDown(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'climate') {
+        console.error(`Climate device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current temperature
+        const currentTemp = await getCurrentTemperatureAndUpdate(device);
+        const newTemp = (currentTemp || 20) - 1; // Decrease by 1°C
+        
+        await setClimateTemperature(deviceId, newTemp);
+    } catch (error) {
+        console.error(`❌ Error decreasing temperature for ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle HVAC mode setting for climate devices
+ */
+async function handleDeviceSetMode(deviceId, mode) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'climate') {
+        console.error(`Climate device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setClimateMode(deviceId, mode);
+    } catch (error) {
+        console.error(`❌ Error setting mode for ${device.name}:`, error);
+    }
+}
+
+// ============================================================================
+// BLIND ACTION HANDLERS
+// ============================================================================
+
+/**
+ * Handle open for blind devices
+ */
+async function handleDeviceBlindOpen(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        console.error(`Blind device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setBlindOpen(deviceId);
+    } catch (error) {
+        console.error(`❌ Error opening ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle close for blind devices
+ */
+async function handleDeviceBlindClose(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        console.error(`Blind device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setBlindClose(deviceId);
+    } catch (error) {
+        console.error(`❌ Error closing ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle stop for blind devices
+ */
+async function handleDeviceBlindStop(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        console.error(`Blind device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        await setBlindStop(deviceId);
+    } catch (error) {
+        console.error(`❌ Error stopping ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle position up for blind devices (increase by 10%)
+ */
+async function handleDeviceBlindUp(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        console.error(`Blind device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current position
+        const currentPosition = await getCurrentBlindPositionAndUpdate(device);
+        const newPosition = Math.min(100, (currentPosition || 0) + 10); // Increase by 10%
+        
+        await setBlindPosition(deviceId, newPosition);
+    } catch (error) {
+        console.error(`❌ Error moving up ${device.name}:`, error);
+    }
+}
+
+/**
+ * Handle position down for blind devices (decrease by 10%)
+ */
+async function handleDeviceBlindDown(deviceId) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'blind') {
+        console.error(`Blind device not found: ${deviceId}`);
+        return;
+    }
+    
+    try {
+        // Get current position
+        const currentPosition = await getCurrentBlindPositionAndUpdate(device);
+        const newPosition = Math.max(0, (currentPosition || 0) - 10); // Decrease by 10%
+        
+        await setBlindPosition(deviceId, newPosition);
+    } catch (error) {
+        console.error(`❌ Error moving down ${device.name}:`, error);
     }
 }
 
@@ -650,7 +1405,7 @@ async function handleDevicePowerOff(deviceId) {
  * Handle playback device updates for playback control
  */
 async function handlePlaybackDeviceUpdate(deviceId, values) {
-    const device = HA_CONFIG.mediaDevices.find(d => d.id === deviceId);
+    const device = findDevice(deviceId);
     if (!device || device.type !== 'playback') {
         return;
     }
@@ -732,6 +1487,111 @@ async function handleMediaDeviceUpdate(deviceId, values) {
     }
 }
 
+/**
+ * Handle light device updates from Flic Twist controllers
+ * @param {string} deviceId - Virtual device ID
+ * @param {Object} values - Values from Flic Twist (brightness, hue, saturation, colorTemperature: all 0-1)
+ */
+async function handleLightDeviceUpdate(deviceId, values) {
+    const device = findDevice(deviceId);
+    if (!device) return;
+    
+    try {
+        // Handle brightness changes
+        if (values.brightness !== undefined) {
+            // Convert brightness from 0-1 to 0-255 for Home Assistant
+            const brightness = Math.round(values.brightness * 255);
+            
+            if (brightness === 0) {
+                // Turn off the light when brightness is 0
+                await setLightPower(deviceId, false);
+                return; // Exit early if turning off
+            } else {
+                // Set brightness (this also turns on the light)
+                await setLightBrightness(deviceId, brightness);
+            }
+        }
+        
+        // Handle color changes (for color_light devices)
+        if (device.type === 'color_light') {
+            const colorData = {};
+            
+            // Handle hue and saturation (HSV color space)
+            if (values.hue !== undefined || values.saturation !== undefined) {
+                if (values.hue !== undefined) {
+                    colorData.hs_color = colorData.hs_color || [0, 0];
+                    colorData.hs_color[0] = Math.round(values.hue * 360); // Convert 0-1 to 0-360 degrees
+                }
+                if (values.saturation !== undefined) {
+                    colorData.hs_color = colorData.hs_color || [0, 0];
+                    colorData.hs_color[1] = Math.round(values.saturation * 100); // Convert 0-1 to 0-100%
+                }
+            }
+            
+            // Handle color temperature
+            if (values.colorTemperature !== undefined) {
+                // Convert 0-1 to typical mireds range (154-500, warm to cool)
+                const mireds = Math.round(154 + (values.colorTemperature * (500 - 154)));
+                colorData.color_temp = mireds;
+            }
+            
+            // Apply color changes if any
+            if (Object.keys(colorData).length > 0) {
+                await callHAService('light', 'turn_on', {
+                    entity_id: device.entityId,
+                    ...colorData
+                });
+                console.log(`✅ ${device.name} color updated`);
+            }
+        }
+    } catch (error) {
+        console.error(`❌ Failed to update light device ${deviceId}:`, error);
+    }
+}
+
+/**
+ * Handle climate device updates from Flic Twist controllers  
+ * @param {string} deviceId - Virtual device ID
+ * @param {Object} values - Values from Flic Twist (position: 0-1 mapped to temperature)
+ */
+async function handleClimateDeviceUpdate(deviceId, values) {
+    if (values.position !== undefined) {
+        const device = findDevice(deviceId);
+        if (!device) return;
+        
+        // Use device-specific temperature range or default
+        const tempRange = device.tempRange || HA_CONFIG.valueRanges.climate;
+        
+        // Convert position (0-1) to temperature range
+        const temperature = tempRange.min + (values.position * (tempRange.max - tempRange.min));
+        const roundedTemp = Math.round(temperature * 10) / 10; // Round to 1 decimal place
+        
+        try {
+            await setClimateTemperature(deviceId, roundedTemp);
+        } catch (error) {
+            console.error(`❌ Failed to update climate device ${deviceId}:`, error);
+        }
+    }
+}
+
+/**
+ * Handle blind device updates from Flic Twist controllers
+ * @param {string} deviceId - Virtual device ID
+ * @param {Object} values - Values from Flic Twist (position: 0-1 mapped to blind position)
+ */
+async function handleBlindDeviceUpdate(deviceId, values) {
+    if (values.position !== undefined) {
+        // Convert position from 0-1 to 0-100 percentage for Home Assistant
+        const blindPosition = Math.round(values.position * 100);
+        
+        try {
+            await setBlindPosition(deviceId, blindPosition);
+        } catch (error) {
+            console.error(`❌ Failed to update blind device ${deviceId}:`, error);
+        }
+    }
+}
+
 // ============================================================================
 // VIRTUAL DEVICE STATE MANAGEMENT
 // ============================================================================
@@ -759,17 +1619,134 @@ async function getCurrentVolumeAndUpdate(device) {
 }
 
 /**
+ * Get current brightness from Home Assistant light device and update virtual device state
+ * @param {Object} device - Device configuration
+ * @returns {Promise<number>} - Current brightness (0-255)
+ */
+async function getCurrentBrightnessAndUpdate(device) {
+    try {
+        const stateData = await getEntityState(device.entityId);
+        
+        let brightness = 0;
+        if (stateData.state === 'on' && stateData.attributes.brightness !== undefined) {
+            brightness = stateData.attributes.brightness; // 0-255
+        }
+        
+        // Prepare state update for Light virtual device
+        const lightState = {
+            brightness: brightness / 255
+        };
+        
+        // Add color information for color_light devices
+        if (device.type === 'color_light') {
+            // Handle hue and saturation
+            if (stateData.attributes.hs_color) {
+                const [hue, saturation] = stateData.attributes.hs_color;
+                lightState.hue = hue / 360; // Convert 0-360 to 0-1
+                lightState.saturation = saturation / 100; // Convert 0-100 to 0-1
+            }
+            
+            // Handle color temperature
+            if (stateData.attributes.color_temp) {
+                const mireds = stateData.attributes.color_temp;
+                // Convert mireds range (154-500) to 0-1
+                lightState.colorTemperature = (mireds - 154) / (500 - 154);
+            }
+        }
+        
+        // Update virtual device state
+        flicApp.virtualDeviceUpdateState('Light', device.id, lightState);
+        
+        return brightness;
+    } catch (error) {
+        console.error(`❌ Error getting current brightness for ${device.name}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Get current temperature from Home Assistant climate device and update virtual device state
+ * @param {Object} device - Device configuration  
+ * @returns {Promise<number>} - Current target temperature in °C
+ */
+async function getCurrentTemperatureAndUpdate(device) {
+    try {
+        const stateData = await getEntityState(device.entityId);
+        
+        // Get current target temperature
+        const targetTemp = stateData.attributes.temperature || 20; // Default to 20°C
+        
+        // Use device-specific temperature range or default
+        const tempRange = device.tempRange || HA_CONFIG.valueRanges.climate;
+        
+        // Convert temperature to 0-1 range for virtual device
+        const normalizedTemp = (targetTemp - tempRange.min) / (tempRange.max - tempRange.min);
+        
+        // Update virtual device state (Blind uses 0-1 range for position)
+        flicApp.virtualDeviceUpdateState('Blind', device.id, {
+            position: Math.max(0, Math.min(1, normalizedTemp))
+        });
+        
+        return targetTemp;
+    } catch (error) {
+        console.error(`❌ Error getting current temperature for ${device.name}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Get current position from Home Assistant blind/cover device and update virtual device state
+ * @param {Object} device - Device configuration
+ * @returns {Promise<number>} - Current position percentage (0-100)
+ */
+async function getCurrentBlindPositionAndUpdate(device) {
+    try {
+        const stateData = await getEntityState(device.entityId);
+        
+        // Get current position (0-100 percentage)
+        let position = 0;
+        if (stateData.attributes.current_position !== undefined) {
+            position = stateData.attributes.current_position;
+        } else if (stateData.state === 'open') {
+            position = 100;
+        } else if (stateData.state === 'closed') {
+            position = 0;
+        }
+        
+        // Update virtual device state (Blind uses 0-1 range for position)
+        flicApp.virtualDeviceUpdateState('Blind', device.id, {
+            position: position / 100
+        });
+        
+        return position;
+    } catch (error) {
+        console.error(`❌ Error getting current position for ${device.name}:`, error);
+        return null;
+    }
+}
+
+/**
  * Create virtual devices for Flic Twist integration
  */
 function createVirtualDevices() {
     console.log('🎛️ Creating virtual devices...');
     
-    HA_CONFIG.mediaDevices.forEach(device => {
+    // Create virtual devices for all device categories
+    Object.values(HA_CONFIG.devices).flat().forEach(device => {
+        let virtualDeviceType = 'Speaker'; // Default for media devices
+        
         if (device.type === 'media_player' || device.type === 'playback') {
-            // Create Speaker virtual device for volume/playback control
-            const virtualDevice = flicApp.createVirtualDevice(device.id, 'Speaker', device.name);
-            console.log(`✅ Created virtual device: ${device.name}`);
+            virtualDeviceType = 'Speaker';
+        } else if (device.type === 'light' || device.type === 'color_light') {
+            virtualDeviceType = 'Light';
+        } else if (device.type === 'climate') {
+            virtualDeviceType = 'Blind'; // Use Blind for position-based temperature control
+        } else if (device.type === 'blind') {
+            virtualDeviceType = 'Blind'; // Use Blind for position-based blind control
         }
+        
+        const virtualDevice = flicApp.createVirtualDevice(device.id, virtualDeviceType, device.name);
+        console.log(`✅ Created virtual device: ${device.name} (${virtualDeviceType})`);
     });
 }
 
@@ -779,7 +1756,8 @@ function createVirtualDevices() {
 async function initializeVirtualDeviceStates() {
     console.log('🔄 Initializing virtual device states...');
     
-    for (const device of HA_CONFIG.mediaDevices) {
+    // Initialize all device types
+    for (const device of Object.values(HA_CONFIG.devices).flat()) {
         if (device.type === 'media_player') {
             // Get current volume for media devices
             await getCurrentVolumeAndUpdate(device);
@@ -788,6 +1766,15 @@ async function initializeVirtualDeviceStates() {
             flicApp.virtualDeviceUpdateState('Speaker', device.id, {
                 volume: 0.5
             });
+        } else if (device.type === 'light' || device.type === 'color_light') {
+            // Get current brightness for light devices
+            await getCurrentBrightnessAndUpdate(device);
+        } else if (device.type === 'climate') {
+            // Get current temperature for climate devices
+            await getCurrentTemperatureAndUpdate(device);
+        } else if (device.type === 'blind') {
+            // Get current position for blind devices
+            await getCurrentBlindPositionAndUpdate(device);
         }
     }
     
@@ -801,27 +1788,52 @@ async function initializeVirtualDeviceStates() {
 // Load configuration
 function loadHAConfig() {
     console.log('Loading Home Assistant configuration...');
-    console.log('Configured devices:', HA_CONFIG.mediaDevices.map(d => d.name));
+    
+    const allDevices = Object.values(HA_CONFIG.devices).flat();
+    console.log('Configured devices:', allDevices.map(d => d.name).join(', '));
 }
 
 // Initialize the integration
 async function initializeHAIntegration() {
     loadHAConfig();
     
-    console.log('Home Assistant Media Integration Ready!');
+    console.log('Home Assistant Universal Integration Ready!');
     console.log('Available features:');
-    console.log('- Volume control via Flic buttons');
-    console.log('- Volume control via Flic Twist controllers');
-    console.log('- Playback control via Flic Twist (playback device)');
-    console.log('- Multi-device synchronization');
+    console.log('- Media control via Flic buttons and Twist controllers');
+    console.log('- Light control via Flic Twist controllers (brightness)');
+    console.log('- Climate control via Flic Twist controllers (temperature)');
+    console.log('- Multi-device synchronization across all device types');
+    console.log('- Intelligent playbook control with state detection');
     console.log('');
     console.log('Action messages:');
-    console.log('- "{device-id} volume up" - Increase volume by 10% (e.g., "livingroom_tv volume up")');
-    console.log('- "{device-id} volume down" - Decrease volume by 10% (e.g., "livingroom_tv volume down")');
-    console.log('- "{device-id} mute" - Toggle mute (e.g., "livingroom_tv mute")');
-    console.log('- "{device-id} power" - Toggle power on/off (e.g., "livingroom_tv power")');
-    console.log('- "{device-id} on" - Turn device on (e.g., "livingroom_tv on")');
-    console.log('- "{device-id} off" - Turn device off (e.g., "livingroom_tv off")');
+    console.log('');
+    console.log('📺 Media Devices:');
+    console.log('- "{device-id} volume up/down" - Volume control');
+    console.log('- "{device-id} mute" - Toggle mute');
+    console.log('');
+    console.log('💡 Light Devices:');
+    console.log('- "{device-id} brightness up/down" - Brightness control');
+    console.log('- "{device-id} bright" - Set to 100% brightness');
+    console.log('- "{device-id} dim" - Set to 20% brightness');
+    console.log('');
+    console.log('🌡️ Climate Devices:');
+    console.log('- "{device-id} temp up/down" - Temperature control');
+    console.log('- "{device-id} heat/cool/auto" - HVAC mode control');
+    console.log('');
+    console.log('🪟 Blind/Cover Devices:');
+    console.log('- "{device-id} open/close" - Open/close blinds');
+    console.log('- "{device-id} stop" - Stop blind movement');
+    console.log('- "{device-id} position up/down" - Adjust position by 10%');
+    console.log('');
+    console.log('🔌 Universal Actions (all devices):');
+    console.log('- "{device-id} power" - Toggle power on/off');
+    console.log('- "{device-id} on/off" - Direct power control');
+    console.log('');
+    console.log('🎛️ Flic Twist Controls:');
+    console.log('- Media: Speaker devices for volume/playback');
+    console.log('- Lights: Light devices for brightness/color control');
+    console.log('- Climate: Blind devices for temperature control (position-based)');
+    console.log('- Blinds: Blind devices for position control (0-100%)');
     
     // Test HTTP connectivity
     await testHTTPConnectivity();
