@@ -329,7 +329,6 @@ async function setMediaPower(deviceId, powerOn) {
     }
     
     const service = powerOn ? 'turn_on' : 'turn_off';
-    console.log(`Setting power for ${device.name} to ${powerOn ? 'on' : 'off'}`);
     
     try {
         const response = await callHAService('media_player', service, {
@@ -337,7 +336,7 @@ async function setMediaPower(deviceId, powerOn) {
         });
         
         if (response.success) {
-            console.log(`Successfully set power for ${device.name}`);
+            console.log(`✅ ${device.name} power ${powerOn ? 'on' : 'off'}`);
             return response;
         } else {
             throw new Error(`Failed to set power for ${device.name}`);
@@ -361,7 +360,6 @@ async function setMediaMute(deviceId, muted) {
     }
     
     const service = muted ? 'volume_mute' : 'volume_mute';
-    console.log(`Setting mute for ${device.name} to ${muted}`);
     
     try {
         const response = await callHAService('media_player', service, {
@@ -370,7 +368,7 @@ async function setMediaMute(deviceId, muted) {
         });
         
         if (response.success) {
-            console.log(`Successfully set mute for ${device.name}`);
+            console.log(`✅ ${device.name} ${muted ? 'muted' : 'unmuted'}`);
             return response;
         } else {
             throw new Error(`Failed to set mute for ${device.name}`);
@@ -391,8 +389,6 @@ async function setMediaPause(deviceId) {
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
-    
-    console.log(`Pausing playback for ${device.name}`);
     
     try {
         const response = await callHAService('media_player', 'media_pause', {
@@ -422,8 +418,6 @@ async function setMediaPlay(deviceId) {
         throw new Error(`Device ${deviceId} not found`);
     }
     
-    console.log(`Resuming playback for ${device.name}`);
-    
     try {
         const response = await callHAService('media_player', 'media_play', {
             entity_id: device.entityId
@@ -451,8 +445,6 @@ async function setMediaNextTrack(deviceId) {
     if (!device) {
         throw new Error(`Device ${deviceId} not found`);
     }
-    
-    console.log(`Skipping to next track for ${device.name}`);
     
     try {
         const response = await callHAService('media_player', 'media_next_track', {
@@ -559,12 +551,10 @@ function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction)
     // Cancel previous timeout for this device/type combination
     if (pendingUpdates.has(key)) {
         clearTimeout(pendingUpdates.get(key).timeoutId);
-        console.log(`🔄 Debouncing ${updateType} update for ${deviceId}`);
     }
     
     // Store the update with a new timeout
     const timeoutId = setTimeout(async () => {
-        console.log(`⏰ Executing debounced ${updateType} update for ${deviceId}`);
         try {
             await updateFunction(updateData);
         } catch (error) {
@@ -581,8 +571,6 @@ function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction)
         updateData,
         updateFunction
     });
-    
-    console.log(`⏳ Queued ${updateType} update for ${deviceId} (${pendingUpdates.size} pending)`);
 }
 
 /**
@@ -594,9 +582,6 @@ function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction)
 function rememberColor(deviceId, hue, saturation) {
     if (saturation > MEANINGFUL_SATURATION_THRESHOLD) {  // Only remember truly meaningful colors
         colorMemory.set(deviceId, { hue, saturation });
-        console.log(`🧠 Remembered color for ${deviceId}: hue=${hue}°, saturation=${saturation}%`);
-    } else {
-        console.log(`🧠 Skipping color memory for ${deviceId}: saturation ${saturation}% too low (< ${MEANINGFUL_SATURATION_THRESHOLD}%)`);
     }
 }
 
@@ -610,10 +595,8 @@ function rememberColor(deviceId, hue, saturation) {
 function getRememberedColor(deviceId, fallbackHue = 0, fallbackSat = 100) {
     const remembered = colorMemory.get(deviceId);
     if (remembered) {
-        console.log(`🧠 Retrieved remembered color for ${deviceId}: hue=${remembered.hue}°, saturation=${remembered.saturation}%`);
         return remembered;
     } else {
-        console.log(`🧠 No color memory for ${deviceId}, using fallbacks: hue=${fallbackHue}°, saturation=${fallbackSat}%`);
         return { hue: fallbackHue, saturation: fallbackSat };
     }
 }
@@ -636,7 +619,6 @@ async function setLightBrightness(deviceId, brightness) {
     
     // Clamp brightness to valid range
     const clampedBrightness = Math.max(0, Math.min(255, Math.round(brightness)));
-    console.log(`Setting brightness for ${device.name} to ${clampedBrightness}`);
     
     try {
         const response = await callHAService('light', 'turn_on', {
@@ -671,7 +653,6 @@ async function setLightPower(deviceId, powerOn) {
     }
     
     const service = powerOn ? 'turn_on' : 'turn_off';
-    console.log(`Setting power for ${device.name} to ${powerOn ? 'on' : 'off'}`);
     
     try {
         const response = await callHAService('light', service, {
@@ -706,7 +687,6 @@ async function setLightColor(deviceId, rgbColor) {
     
     // Validate RGB values
     const [r, g, b] = rgbColor.map(c => Math.max(0, Math.min(255, Math.round(c))));
-    console.log(`Setting color for ${device.name} to RGB(${r}, ${g}, ${b})`);
     
     try {
         const response = await callHAService('light', 'turn_on', {
@@ -758,8 +738,6 @@ async function setClimateTemperature(deviceId, temperature) {
     const tempRange = device.tempRange || HA_CONFIG.valueRanges.climate;
     const clampedTemp = Math.max(tempRange.min, Math.min(tempRange.max, Math.round(temperature * 10) / 10));
     
-    console.log(`Setting temperature for ${device.name} to ${clampedTemp}°C`);
-    
     try {
         const response = await callHAService('climate', 'set_temperature', {
             entity_id: device.entityId,
@@ -791,8 +769,6 @@ async function setClimateMode(deviceId, mode) {
     if (!device || device.type !== 'climate') {
         throw new Error(`Climate device ${deviceId} not found`);
     }
-    
-    console.log(`Setting HVAC mode for ${device.name} to ${mode}`);
     
     try {
         const response = await callHAService('climate', 'set_hvac_mode', {
@@ -830,8 +806,6 @@ async function setBlindPosition(deviceId, position) {
     
     // Clamp position to valid range
     const clampedPosition = Math.max(0, Math.min(100, Math.round(position)));
-    console.log(`Setting position for ${device.name} to ${clampedPosition}%`);
-    
     try {
         const response = await callHAService('cover', 'set_cover_position', {
             entity_id: device.entityId,
@@ -863,8 +837,6 @@ async function setBlindOpen(deviceId) {
         throw new Error(`Blind device ${deviceId} not found`);
     }
     
-    console.log(`Opening ${device.name}`);
-    
     try {
         const response = await callHAService('cover', 'open_cover', {
             entity_id: device.entityId
@@ -895,8 +867,6 @@ async function setBlindClose(deviceId) {
         throw new Error(`Blind device ${deviceId} not found`);
     }
     
-    console.log(`Closing ${device.name}`);
-    
     try {
         const response = await callHAService('cover', 'close_cover', {
             entity_id: device.entityId
@@ -926,8 +896,6 @@ async function setBlindStop(deviceId) {
     if (!device || device.type !== 'blind') {
         throw new Error(`Blind device ${deviceId} not found`);
     }
-    
-    console.log(`Stopping ${device.name}`);
     
     try {
         const response = await callHAService('cover', 'stop_cover', {
@@ -1708,8 +1676,6 @@ async function applyColorUpdate(deviceId, colorUpdate) {
     const device = findDevice(deviceId);
     if (!device || device.type !== 'color_light') return;
     
-    console.log(`🎨 Applying debounced color update - hue: ${colorUpdate.hue}, saturation: ${colorUpdate.saturation}`);
-    
     // Get current state to preserve existing color values
     const currentState = await getEntityState(device.entityId);
     let currentHue = 0;    // Default fallback
@@ -1717,13 +1683,8 @@ async function applyColorUpdate(deviceId, colorUpdate) {
     
     if (currentState.attributes.hs_color) {
         [currentHue, currentSat] = currentState.attributes.hs_color;
-        console.log(`🎨 Current HS color: [${currentHue}, ${currentSat}]`);
-        
         // Remember current color if it's meaningful
-        // rememberColor() function will check if saturation is meaningful
         rememberColor(deviceId, currentHue, currentSat);
-    } else {
-        console.log(`🎨 No current HS color, using defaults: [${currentHue}, ${currentSat}]`);
     }
     
     // Start with current color values, then update what changed
@@ -1733,7 +1694,7 @@ async function applyColorUpdate(deviceId, colorUpdate) {
     // Handle hue changes
     if (colorUpdate.hue !== undefined) {
         finalHue = Math.round(colorUpdate.hue * 360);
-        console.log(`🎨 Hue changed: ${currentHue}° -> ${finalHue}°`);
+
     }
     
     // Handle saturation changes with color memory logic
@@ -1751,7 +1712,7 @@ async function applyColorUpdate(deviceId, colorUpdate) {
         }
         
         finalSat = newSat;
-        console.log(`🎨 Saturation changed: ${currentSat}% -> ${finalSat}%`);
+
     }
     
     // Remember the final color if it's meaningful
@@ -1761,8 +1722,6 @@ async function applyColorUpdate(deviceId, colorUpdate) {
     const colorData = {
         hs_color: [finalHue, finalSat]
     };
-    
-    console.log(`🎨 Sending final hs_color to HA: [${finalHue}, ${finalSat}] (was: [${currentHue}, ${currentSat}])`);
     
     await callHAService('light', 'turn_on', {
         entity_id: device.entityId,
@@ -1788,8 +1747,6 @@ async function applyColorTemperatureUpdate(deviceId, colorTemperature) {
     
     // Convert 0-1 to typical mireds range (154-500, warm to cool)
     const mireds = Math.round(154 + (colorTemperature * (500 - 154)));
-    console.log(`🎨 Applying debounced color temp change: ${colorTemperature} -> ${mireds} mireds`);
-    
     await callHAService('light', 'turn_on', {
         entity_id: device.entityId,
         color_temp: mireds
@@ -1899,21 +1856,14 @@ async function getCurrentBrightnessAndUpdate(device) {
         
         // Handle color information based on device type
         if (device.type === 'color_light') {
-            console.log(`🎨 Color light state for ${device.name}:`, {
-                hs_color: stateData.attributes.hs_color,
-                rgb_color: stateData.attributes.rgb_color,
-                color_temp: stateData.attributes.color_temp
-            });
+
             
             // Handle hue and saturation from HS color
             if (stateData.attributes.hs_color) {
                 const [hue, saturation] = stateData.attributes.hs_color;
                 lightState.hue = Math.max(0, Math.min(1, hue / 360)); // Convert 0-360 to 0-1
                 lightState.saturation = Math.max(0, Math.min(1, saturation / 100)); // Convert 0-100 to 0-1
-                console.log(`🎨 Using HS color: hue=${lightState.hue}, saturation=${lightState.saturation}`);
-                
                 // Remember this color if it's meaningful
-                // rememberColor() function will check if saturation is meaningful
                 rememberColor(device.id, hue, saturation);
             } else if (stateData.attributes.rgb_color) {
                 // Convert RGB to HSV if HS not available
@@ -1921,19 +1871,16 @@ async function getCurrentBrightnessAndUpdate(device) {
                 const hsv = rgbToHsv(r, g, b);
                 lightState.hue = hsv.h;
                 lightState.saturation = hsv.s;
-                console.log(`🎨 Converted RGB(${r},${g},${b}) to HS: hue=${lightState.hue}, saturation=${lightState.saturation}`);
-                
                 // Remember this color if it's meaningful
                 const hue360 = hsv.h * 360;
                 const sat100 = hsv.s * 100;
-                // rememberColor() function will check if saturation is meaningful
                 rememberColor(device.id, hue360, sat100);
             } else {
                 // No color information available - use neutral defaults
                 // For color lights without color data, use white (like a regular light)
                 lightState.hue = 0.0;        // Red hue
                 lightState.saturation = 0.0;  // No saturation = white light
-                console.log(`🎨 No color data available, using white: hue=0.0, saturation=0.0`);
+
             }
             
             // Handle color temperature (only for color_light devices)
@@ -1941,7 +1888,7 @@ async function getCurrentBrightnessAndUpdate(device) {
                 const mireds = stateData.attributes.color_temp;
                 // Convert mireds range (154-500) to 0-1, clamped
                 lightState.colorTemperature = Math.max(0, Math.min(1, (mireds - 154) / (500 - 154)));
-                console.log(`🎨 Color temperature: ${mireds} mireds -> ${lightState.colorTemperature}`);
+
             } else {
                 // Default color temperature (middle of range - neutral white)
                 lightState.colorTemperature = 0.5;
