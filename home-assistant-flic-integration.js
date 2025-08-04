@@ -537,6 +537,12 @@ function rgbToHsv(r, g, b) {
 // Store pending updates to prevent API flooding
 const pendingUpdates = new Map();
 
+// Color memory system - remembers last meaningful color before going white
+const colorMemory = new Map();
+
+// Color configuration
+const MEANINGFUL_SATURATION_THRESHOLD = 5; // Below 5% saturation is considered essentially white
+
 // Debounce configuration
 const DEBOUNCE_DELAY = 300; // 300ms delay after last twist
 
@@ -577,6 +583,39 @@ function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction)
     });
     
     console.log(`⏳ Queued ${updateType} update for ${deviceId} (${pendingUpdates.size} pending)`);
+}
+
+/**
+ * Store a meaningful color in memory (when saturation > threshold)  
+ * @param {string} deviceId - Device identifier
+ * @param {number} hue - Hue value (0-360)
+ * @param {number} saturation - Saturation value (0-100)
+ */
+function rememberColor(deviceId, hue, saturation) {
+    if (saturation > MEANINGFUL_SATURATION_THRESHOLD) {  // Only remember truly meaningful colors
+        colorMemory.set(deviceId, { hue, saturation });
+        console.log(`🧠 Remembered color for ${deviceId}: hue=${hue}°, saturation=${saturation}%`);
+    } else {
+        console.log(`🧠 Skipping color memory for ${deviceId}: saturation ${saturation}% too low (< ${MEANINGFUL_SATURATION_THRESHOLD}%)`);
+    }
+}
+
+/**
+ * Get remembered color for a device, or fallback values
+ * @param {string} deviceId - Device identifier
+ * @param {number} fallbackHue - Fallback hue if no memory (default: 0)
+ * @param {number} fallbackSat - Fallback saturation if no memory (default: 100)
+ * @returns {Object} - {hue, saturation}
+ */
+function getRememberedColor(deviceId, fallbackHue = 0, fallbackSat = 100) {
+    const remembered = colorMemory.get(deviceId);
+    if (remembered) {
+        console.log(`🧠 Retrieved remembered color for ${deviceId}: hue=${remembered.hue}°, saturation=${remembered.saturation}%`);
+        return remembered;
+    } else {
+        console.log(`🧠 No color memory for ${deviceId}, using fallbacks: hue=${fallbackHue}°, saturation=${fallbackSat}%`);
+        return { hue: fallbackHue, saturation: fallbackSat };
+    }
 }
 
 // ============================================================================
@@ -677,6 +716,14 @@ async function setLightColor(deviceId, rgbColor) {
         
         if (response.success) {
             console.log(`✅ ${device.name} color set to RGB(${r}, ${g}, ${b})`);
+            
+            // Remember this color immediately (convert RGB to HSV for memory)
+            const hsv = rgbToHsv(r, g, b);
+            const hue360 = hsv.h * 360;
+            const sat100 = hsv.s * 100;
+            // rememberColor() function will check if saturation is meaningful
+            rememberColor(deviceId, hue360, sat100);
+            
             // Wait a moment for Home Assistant to update the state
             await new Promise(resolve => setTimeout(resolve, 100));
             // Update virtual device state
@@ -1653,7 +1700,7 @@ async function handleLightDeviceUpdate(deviceId, values) {
 }
 
 /**
- * Apply color update to Home Assistant (used by debouncer)
+ * Apply color update to Home Assistant (used by debouncer) with color memory
  * @param {string} deviceId - Device identifier
  * @param {Object} colorUpdate - Color update data {hue, saturation}
  */
@@ -1671,27 +1718,51 @@ async function applyColorUpdate(deviceId, colorUpdate) {
     if (currentState.attributes.hs_color) {
         [currentHue, currentSat] = currentState.attributes.hs_color;
         console.log(`🎨 Current HS color: [${currentHue}, ${currentSat}]`);
+        
+        // Remember current color if it's meaningful
+        // rememberColor() function will check if saturation is meaningful
+        rememberColor(deviceId, currentHue, currentSat);
     } else {
         console.log(`🎨 No current HS color, using defaults: [${currentHue}, ${currentSat}]`);
     }
     
     // Start with current color values, then update what changed
-    const colorData = {
-        hs_color: [currentHue, currentSat]
-    };
+    let finalHue = currentHue;
+    let finalSat = currentSat;
     
+    // Handle hue changes
     if (colorUpdate.hue !== undefined) {
-        const newHue = Math.round(colorUpdate.hue * 360);
-        colorData.hs_color[0] = newHue;
-        console.log(`🎨 Hue changed: ${currentHue}° -> ${newHue}°`);
+        finalHue = Math.round(colorUpdate.hue * 360);
+        console.log(`🎨 Hue changed: ${currentHue}° -> ${finalHue}°`);
     }
+    
+    // Handle saturation changes with color memory logic
     if (colorUpdate.saturation !== undefined) {
         const newSat = Math.round(colorUpdate.saturation * 100);
-        colorData.hs_color[1] = newSat;
-        console.log(`🎨 Saturation changed: ${currentSat}% -> ${newSat}%`);
+        
+        // Special case: if current saturation is essentially white and we're increasing to meaningful saturation
+        if (currentSat <= MEANINGFUL_SATURATION_THRESHOLD && newSat > MEANINGFUL_SATURATION_THRESHOLD) {
+            // Use remembered hue instead of current hue (which might be meaningless)
+            const remembered = getRememberedColor(deviceId, finalHue, newSat);
+            if (colorUpdate.hue === undefined) { // Only use remembered hue if hue wasn't explicitly changed
+                finalHue = remembered.hue;
+                console.log(`🎨 Restoring from white: using remembered hue ${finalHue}° instead of current ${currentHue}° (current sat ${currentSat}% <= ${MEANINGFUL_SATURATION_THRESHOLD}%)`);
+            }
+        }
+        
+        finalSat = newSat;
+        console.log(`🎨 Saturation changed: ${currentSat}% -> ${finalSat}%`);
     }
     
-    console.log(`🎨 Sending final hs_color to HA: [${colorData.hs_color[0]}, ${colorData.hs_color[1]}] (was: [${currentHue}, ${currentSat}])`);
+    // Remember the final color if it's meaningful
+    // rememberColor() function will check if saturation is meaningful
+    rememberColor(deviceId, finalHue, finalSat);
+    
+    const colorData = {
+        hs_color: [finalHue, finalSat]
+    };
+    
+    console.log(`🎨 Sending final hs_color to HA: [${finalHue}, ${finalSat}] (was: [${currentHue}, ${currentSat}])`);
     
     await callHAService('light', 'turn_on', {
         entity_id: device.entityId,
@@ -1840,6 +1911,10 @@ async function getCurrentBrightnessAndUpdate(device) {
                 lightState.hue = Math.max(0, Math.min(1, hue / 360)); // Convert 0-360 to 0-1
                 lightState.saturation = Math.max(0, Math.min(1, saturation / 100)); // Convert 0-100 to 0-1
                 console.log(`🎨 Using HS color: hue=${lightState.hue}, saturation=${lightState.saturation}`);
+                
+                // Remember this color if it's meaningful
+                // rememberColor() function will check if saturation is meaningful
+                rememberColor(device.id, hue, saturation);
             } else if (stateData.attributes.rgb_color) {
                 // Convert RGB to HSV if HS not available
                 const [r, g, b] = stateData.attributes.rgb_color;
@@ -1847,6 +1922,12 @@ async function getCurrentBrightnessAndUpdate(device) {
                 lightState.hue = hsv.h;
                 lightState.saturation = hsv.s;
                 console.log(`🎨 Converted RGB(${r},${g},${b}) to HS: hue=${lightState.hue}, saturation=${lightState.saturation}`);
+                
+                // Remember this color if it's meaningful
+                const hue360 = hsv.h * 360;
+                const sat100 = hsv.s * 100;
+                // rememberColor() function will check if saturation is meaningful
+                rememberColor(device.id, hue360, sat100);
             } else {
                 // No color information available - use neutral defaults
                 // For color lights without color data, use white (like a regular light)
