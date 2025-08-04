@@ -488,6 +488,98 @@ function findDevice(deviceId) {
 }
 
 // ============================================================================
+// COLOR CONVERSION HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Convert RGB values to HSV (Hue, Saturation, Value)
+ * @param {number} r - Red component (0-255)
+ * @param {number} g - Green component (0-255)
+ * @param {number} b - Blue component (0-255)
+ * @returns {Object} - HSV object with h (0-1), s (0-1), v (0-1)
+ */
+function rgbToHsv(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const diff = max - min;
+    
+    let h = 0;
+    let s = max === 0 ? 0 : diff / max;
+    let v = max;
+    
+    if (diff !== 0) {
+        switch (max) {
+            case r:
+                h = ((g - b) / diff) % 6;
+                break;
+            case g:
+                h = (b - r) / diff + 2;
+                break;
+            case b:
+                h = (r - g) / diff + 4;
+                break;
+        }
+    }
+    
+    h = Math.max(0, h / 6); // Convert to 0-1 range
+    
+    return { h, s, v };
+}
+
+// ============================================================================
+// DEBOUNCING SYSTEM FOR TWIST UPDATES
+// ============================================================================
+
+// Store pending updates to prevent API flooding
+const pendingUpdates = new Map();
+
+// Debounce configuration
+const DEBOUNCE_DELAY = 300; // 300ms delay after last twist
+
+/**
+ * Debounced device update - collects rapid changes and sends only the final value
+ * @param {string} deviceId - Device identifier
+ * @param {string} updateType - Type of update (brightness, color, volume, etc.)
+ * @param {Object} updateData - Data to send to Home Assistant
+ * @param {Function} updateFunction - Function to call with the final update
+ */
+function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction) {
+    const key = `${deviceId}_${updateType}`;
+    
+    // Cancel previous timeout for this device/type combination
+    if (pendingUpdates.has(key)) {
+        clearTimeout(pendingUpdates.get(key).timeoutId);
+        console.log(`🔄 Debouncing ${updateType} update for ${deviceId}`);
+    }
+    
+    // Store the update with a new timeout
+    const timeoutId = setTimeout(async () => {
+        console.log(`⏰ Executing debounced ${updateType} update for ${deviceId}`);
+        try {
+            await updateFunction(updateData);
+        } catch (error) {
+            console.error(`❌ Debounced update failed for ${deviceId}:`, error);
+        } finally {
+            // Clean up the pending update
+            pendingUpdates.delete(key);
+        }
+    }, DEBOUNCE_DELAY);
+    
+    // Store the pending update
+    pendingUpdates.set(key, {
+        timeoutId,
+        updateData,
+        updateFunction
+    });
+    
+    console.log(`⏳ Queued ${updateType} update for ${deviceId} (${pendingUpdates.size} pending)`);
+}
+
+// ============================================================================
 // LIGHT CONTROL FUNCTIONS
 // ============================================================================
 
@@ -585,6 +677,10 @@ async function setLightColor(deviceId, rgbColor) {
         
         if (response.success) {
             console.log(`✅ ${device.name} color set to RGB(${r}, ${g}, ${b})`);
+            // Wait a moment for Home Assistant to update the state
+            await new Promise(resolve => setTimeout(resolve, 100));
+            // Update virtual device state
+            await getCurrentBrightnessAndUpdate(device);
             return response;
         } else {
             throw new Error(`Failed to set color for ${device.name}`);
@@ -1479,16 +1575,19 @@ async function handleMediaDeviceUpdate(deviceId, values) {
         
         const volumePercentage = Math.round(values.volume * 100);
         
-        try {
-            await setMediaVolume(deviceId, volumePercentage);
-        } catch (error) {
-            console.error(`❌ Failed to update media device ${deviceId}:`, error);
-        }
+        // Debounce volume changes to prevent API flooding
+        debouncedDeviceUpdate(deviceId, 'volume', volumePercentage, async (finalVolume) => {
+            try {
+                await setMediaVolume(deviceId, finalVolume);
+            } catch (error) {
+                console.error(`❌ Failed to update media device ${deviceId}:`, error);
+            }
+        });
     }
 }
 
 /**
- * Handle light device updates from Flic Twist controllers
+ * Handle light device updates from Flic Twist controllers (with debouncing)
  * @param {string} deviceId - Virtual device ID
  * @param {Object} values - Values from Flic Twist (brightness, hue, saturation, colorTemperature: all 0-1)
  */
@@ -1496,57 +1595,141 @@ async function handleLightDeviceUpdate(deviceId, values) {
     const device = findDevice(deviceId);
     if (!device) return;
     
-    try {
-        // Handle brightness changes
-        if (values.brightness !== undefined) {
-            // Convert brightness from 0-1 to 0-255 for Home Assistant
-            const brightness = Math.round(values.brightness * 255);
-            
-            if (brightness === 0) {
-                // Turn off the light when brightness is 0
+    // Handle brightness changes with debouncing
+    if (values.brightness !== undefined) {
+        const brightness = Math.round(values.brightness * 255);
+        
+        if (brightness === 0) {
+            // Immediate power off - don't debounce this
+            try {
                 await setLightPower(deviceId, false);
-                return; // Exit early if turning off
-            } else {
-                // Set brightness (this also turns on the light)
-                await setLightBrightness(deviceId, brightness);
+            } catch (error) {
+                console.error(`❌ Failed to turn off light ${deviceId}:`, error);
             }
+            return; // Exit early if turning off
+        } else {
+            // Debounce brightness changes
+            debouncedDeviceUpdate(deviceId, 'brightness', brightness, async (finalBrightness) => {
+                try {
+                    await setLightBrightness(deviceId, finalBrightness);
+                } catch (error) {
+                    console.error(`❌ Failed to set brightness for ${deviceId}:`, error);
+                }
+            });
+        }
+    }
+    
+    // Handle color changes (for color_light devices) with debouncing
+    if (device.type === 'color_light') {
+        // Store the current values for debounced update
+        const colorUpdate = {
+            hue: values.hue,
+            saturation: values.saturation,
+            colorTemperature: values.colorTemperature
+        };
+        
+        // Debounce color changes (hue and saturation together)
+        if (values.hue !== undefined || values.saturation !== undefined) {
+            debouncedDeviceUpdate(deviceId, 'color', colorUpdate, async (finalColorUpdate) => {
+                try {
+                    await applyColorUpdate(deviceId, finalColorUpdate);
+                } catch (error) {
+                    console.error(`❌ Failed to update color for ${deviceId}:`, error);
+                }
+            });
         }
         
-        // Handle color changes (for color_light devices)
-        if (device.type === 'color_light') {
-            const colorData = {};
-            
-            // Handle hue and saturation (HSV color space)
-            if (values.hue !== undefined || values.saturation !== undefined) {
-                if (values.hue !== undefined) {
-                    colorData.hs_color = colorData.hs_color || [0, 0];
-                    colorData.hs_color[0] = Math.round(values.hue * 360); // Convert 0-1 to 0-360 degrees
+        // Debounce color temperature changes separately
+        if (values.colorTemperature !== undefined) {
+            debouncedDeviceUpdate(deviceId, 'colortemp', values.colorTemperature, async (finalColorTemp) => {
+                try {
+                    await applyColorTemperatureUpdate(deviceId, finalColorTemp);
+                } catch (error) {
+                    console.error(`❌ Failed to update color temperature for ${deviceId}:`, error);
                 }
-                if (values.saturation !== undefined) {
-                    colorData.hs_color = colorData.hs_color || [0, 0];
-                    colorData.hs_color[1] = Math.round(values.saturation * 100); // Convert 0-1 to 0-100%
-                }
-            }
-            
-            // Handle color temperature
-            if (values.colorTemperature !== undefined) {
-                // Convert 0-1 to typical mireds range (154-500, warm to cool)
-                const mireds = Math.round(154 + (values.colorTemperature * (500 - 154)));
-                colorData.color_temp = mireds;
-            }
-            
-            // Apply color changes if any
-            if (Object.keys(colorData).length > 0) {
-                await callHAService('light', 'turn_on', {
-                    entity_id: device.entityId,
-                    ...colorData
-                });
-                console.log(`✅ ${device.name} color updated`);
-            }
+            });
         }
-    } catch (error) {
-        console.error(`❌ Failed to update light device ${deviceId}:`, error);
     }
+}
+
+/**
+ * Apply color update to Home Assistant (used by debouncer)
+ * @param {string} deviceId - Device identifier
+ * @param {Object} colorUpdate - Color update data {hue, saturation}
+ */
+async function applyColorUpdate(deviceId, colorUpdate) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'color_light') return;
+    
+    console.log(`🎨 Applying debounced color update - hue: ${colorUpdate.hue}, saturation: ${colorUpdate.saturation}`);
+    
+    // Get current state to preserve existing color values
+    const currentState = await getEntityState(device.entityId);
+    let currentHue = 0;    // Default fallback
+    let currentSat = 100;  // Default fallback (full saturation, not white)
+    
+    if (currentState.attributes.hs_color) {
+        [currentHue, currentSat] = currentState.attributes.hs_color;
+        console.log(`🎨 Current HS color: [${currentHue}, ${currentSat}]`);
+    } else {
+        console.log(`🎨 No current HS color, using defaults: [${currentHue}, ${currentSat}]`);
+    }
+    
+    // Start with current color values, then update what changed
+    const colorData = {
+        hs_color: [currentHue, currentSat]
+    };
+    
+    if (colorUpdate.hue !== undefined) {
+        const newHue = Math.round(colorUpdate.hue * 360);
+        colorData.hs_color[0] = newHue;
+        console.log(`🎨 Hue changed: ${currentHue}° -> ${newHue}°`);
+    }
+    if (colorUpdate.saturation !== undefined) {
+        const newSat = Math.round(colorUpdate.saturation * 100);
+        colorData.hs_color[1] = newSat;
+        console.log(`🎨 Saturation changed: ${currentSat}% -> ${newSat}%`);
+    }
+    
+    console.log(`🎨 Sending final hs_color to HA: [${colorData.hs_color[0]}, ${colorData.hs_color[1]}] (was: [${currentHue}, ${currentSat}])`);
+    
+    await callHAService('light', 'turn_on', {
+        entity_id: device.entityId,
+        ...colorData
+    });
+    
+    console.log(`✅ ${device.name} color updated (debounced)`);
+    
+    // Wait a moment for Home Assistant to update the state
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // Update virtual device state to reflect changes
+    await getCurrentBrightnessAndUpdate(device);
+}
+
+/**
+ * Apply color temperature update to Home Assistant (used by debouncer)
+ * @param {string} deviceId - Device identifier
+ * @param {number} colorTemperature - Color temperature (0-1)
+ */
+async function applyColorTemperatureUpdate(deviceId, colorTemperature) {
+    const device = findDevice(deviceId);
+    if (!device || device.type !== 'color_light') return;
+    
+    // Convert 0-1 to typical mireds range (154-500, warm to cool)
+    const mireds = Math.round(154 + (colorTemperature * (500 - 154)));
+    console.log(`🎨 Applying debounced color temp change: ${colorTemperature} -> ${mireds} mireds`);
+    
+    await callHAService('light', 'turn_on', {
+        entity_id: device.entityId,
+        color_temp: mireds
+    });
+    
+    console.log(`✅ ${device.name} color temperature updated (debounced)`);
+    
+    // Wait a moment for Home Assistant to update the state
+    await new Promise(resolve => setTimeout(resolve, 100));
+    // Update virtual device state to reflect changes
+    await getCurrentBrightnessAndUpdate(device);
 }
 
 /**
@@ -1566,11 +1749,14 @@ async function handleClimateDeviceUpdate(deviceId, values) {
         const temperature = tempRange.min + (values.position * (tempRange.max - tempRange.min));
         const roundedTemp = Math.round(temperature * 10) / 10; // Round to 1 decimal place
         
-        try {
-            await setClimateTemperature(deviceId, roundedTemp);
-        } catch (error) {
-            console.error(`❌ Failed to update climate device ${deviceId}:`, error);
-        }
+        // Debounce temperature changes to prevent API flooding
+        debouncedDeviceUpdate(deviceId, 'temperature', roundedTemp, async (finalTemp) => {
+            try {
+                await setClimateTemperature(deviceId, finalTemp);
+            } catch (error) {
+                console.error(`❌ Failed to update climate device ${deviceId}:`, error);
+            }
+        });
     }
 }
 
@@ -1584,11 +1770,14 @@ async function handleBlindDeviceUpdate(deviceId, values) {
         // Convert position from 0-1 to 0-100 percentage for Home Assistant
         const blindPosition = Math.round(values.position * 100);
         
-        try {
-            await setBlindPosition(deviceId, blindPosition);
-        } catch (error) {
-            console.error(`❌ Failed to update blind device ${deviceId}:`, error);
-        }
+        // Debounce blind position changes to prevent motor flooding
+        debouncedDeviceUpdate(deviceId, 'position', blindPosition, async (finalPosition) => {
+            try {
+                await setBlindPosition(deviceId, finalPosition);
+            } catch (error) {
+                console.error(`❌ Failed to update blind device ${deviceId}:`, error);
+            }
+        });
     }
 }
 
@@ -1632,29 +1821,57 @@ async function getCurrentBrightnessAndUpdate(device) {
             brightness = stateData.attributes.brightness; // 0-255
         }
         
-        // Prepare state update for Light virtual device
+        // Prepare state update for Light virtual device with all required properties
         const lightState = {
-            brightness: brightness / 255
+            brightness: Math.max(0, Math.min(1, brightness / 255)) // Ensure 0-1 range
         };
         
-        // Add color information for color_light devices
+        // Handle color information based on device type
         if (device.type === 'color_light') {
-            // Handle hue and saturation
+            console.log(`🎨 Color light state for ${device.name}:`, {
+                hs_color: stateData.attributes.hs_color,
+                rgb_color: stateData.attributes.rgb_color,
+                color_temp: stateData.attributes.color_temp
+            });
+            
+            // Handle hue and saturation from HS color
             if (stateData.attributes.hs_color) {
                 const [hue, saturation] = stateData.attributes.hs_color;
-                lightState.hue = hue / 360; // Convert 0-360 to 0-1
-                lightState.saturation = saturation / 100; // Convert 0-100 to 0-1
+                lightState.hue = Math.max(0, Math.min(1, hue / 360)); // Convert 0-360 to 0-1
+                lightState.saturation = Math.max(0, Math.min(1, saturation / 100)); // Convert 0-100 to 0-1
+                console.log(`🎨 Using HS color: hue=${lightState.hue}, saturation=${lightState.saturation}`);
+            } else if (stateData.attributes.rgb_color) {
+                // Convert RGB to HSV if HS not available
+                const [r, g, b] = stateData.attributes.rgb_color;
+                const hsv = rgbToHsv(r, g, b);
+                lightState.hue = hsv.h;
+                lightState.saturation = hsv.s;
+                console.log(`🎨 Converted RGB(${r},${g},${b}) to HS: hue=${lightState.hue}, saturation=${lightState.saturation}`);
+            } else {
+                // No color information available - use neutral defaults
+                // For color lights without color data, use white (like a regular light)
+                lightState.hue = 0.0;        // Red hue
+                lightState.saturation = 0.0;  // No saturation = white light
+                console.log(`🎨 No color data available, using white: hue=0.0, saturation=0.0`);
             }
             
-            // Handle color temperature
+            // Handle color temperature (only for color_light devices)
             if (stateData.attributes.color_temp) {
                 const mireds = stateData.attributes.color_temp;
-                // Convert mireds range (154-500) to 0-1
-                lightState.colorTemperature = (mireds - 154) / (500 - 154);
+                // Convert mireds range (154-500) to 0-1, clamped
+                lightState.colorTemperature = Math.max(0, Math.min(1, (mireds - 154) / (500 - 154)));
+                console.log(`🎨 Color temperature: ${mireds} mireds -> ${lightState.colorTemperature}`);
+            } else {
+                // Default color temperature (middle of range - neutral white)
+                lightState.colorTemperature = 0.5;
             }
+        } else {
+            // Regular lights - use white light defaults
+            lightState.hue = 0.0;        // Red hue (but with 0 saturation = white)
+            lightState.saturation = 0.0;  // No saturation = white light
         }
         
-        // Update virtual device state
+        // Update virtual device state with all required properties
         flicApp.virtualDeviceUpdateState('Light', device.id, lightState);
         
         return brightness;
