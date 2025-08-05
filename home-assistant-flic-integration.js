@@ -441,28 +441,44 @@ function rgbToHsv(r, g, b) {
 // Store pending updates to prevent API flooding
 const pendingUpdates = new Map();
 
+// Track expected final states for immediate virtual device updates
+const expectedStates = new Map();
+
 // Color memory system - remembers last meaningful color before going white
 const colorMemory = new Map();
 
 // Color configuration
 const MEANINGFUL_SATURATION_THRESHOLD = 5; // Below 5% saturation is considered essentially white
 
-// Debounce configuration
-const DEBOUNCE_DELAY = 300; // 300ms delay after last twist
+// Debounce configuration  
+const DEBOUNCE_DELAY = 100; // Reduced to 100ms for better responsiveness
 
 /**
- * Debounced device update - collects rapid changes and sends only the final value
+ * Debounced device update with immediate virtual device state update
  * @param {string} deviceId - Device identifier
  * @param {string} updateType - Type of update (brightness, color, volume, etc.)
  * @param {Object} updateData - Data to send to Home Assistant
  * @param {Function} updateFunction - Function to call with the final update
+ * @param {Function} immediateStateUpdate - Function to immediately update virtual device state
  */
-function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction) {
+function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction, immediateStateUpdate = null) {
     const key = `${deviceId}_${updateType}`;
     
     // Cancel previous timeout for this device/type combination
     if (pendingUpdates.has(key)) {
         clearTimeout(pendingUpdates.get(key).timeoutId);
+    }
+    
+    // Store expected final state for this device/type
+    expectedStates.set(key, updateData);
+    
+    // Immediately update virtual device state if function provided
+    if (immediateStateUpdate) {
+        try {
+            immediateStateUpdate(updateData);
+        } catch (error) {
+            console.error(`❌ Immediate state update failed for ${deviceId}:`, error);
+        }
     }
     
     // Store the update with a new timeout
@@ -472,8 +488,9 @@ function debouncedDeviceUpdate(deviceId, updateType, updateData, updateFunction)
         } catch (error) {
             console.error(`❌ Debounced update failed for ${deviceId}:`, error);
         } finally {
-            // Clean up the pending update
+            // Clean up the pending update and expected state
             pendingUpdates.delete(key);
+            expectedStates.delete(key);
         }
     }, DEBOUNCE_DELAY);
     
@@ -1400,14 +1417,26 @@ async function handleMediaDeviceUpdate(deviceId, values) {
         
         const volumePercentage = Math.round(values.volume * 100);
         
-        // Debounce volume changes to prevent API flooding
-        debouncedDeviceUpdate(deviceId, 'volume', volumePercentage, async (finalVolume) => {
-            try {
-                await setMediaVolume(deviceId, finalVolume);
-            } catch (error) {
-                console.error(`❌ Failed to update media device ${deviceId}:`, error);
+        // Debounce volume changes to prevent API flooding, but immediately update virtual device
+        debouncedDeviceUpdate(
+            deviceId, 
+            'volume', 
+            volumePercentage, 
+            // Debounced function - calls HA after delay
+            async (finalVolume) => {
+                try {
+                    await setMediaVolume(deviceId, finalVolume);
+                } catch (error) {
+                    console.error(`❌ Failed to update media device ${deviceId}:`, error);
+                }
+            },
+            // Immediate state update - updates virtual device instantly
+            (expectedVolume) => {
+                flicApp.virtualDeviceUpdateState('Speaker', deviceId, {
+                    volume: expectedVolume / 100
+                });
             }
-        });
+        );
     }
 }
 
@@ -1433,14 +1462,31 @@ async function handleLightDeviceUpdate(deviceId, values) {
             }
             return; // Exit early if turning off
         } else {
-            // Debounce brightness changes
-            debouncedDeviceUpdate(deviceId, 'brightness', brightness, async (finalBrightness) => {
-                try {
-                    await setLightBrightness(deviceId, finalBrightness);
-                } catch (error) {
-                    console.error(`❌ Failed to set brightness for ${deviceId}:`, error);
+            // Debounce brightness changes but immediately update virtual device state
+            debouncedDeviceUpdate(
+                deviceId, 
+                'brightness', 
+                brightness,
+                // Debounced function - calls HA after delay  
+                async (finalBrightness) => {
+                    try {
+                        await setLightBrightness(deviceId, finalBrightness);
+                    } catch (error) {
+                        console.error(`❌ Failed to set brightness for ${deviceId}:`, error);
+                    }
+                },
+                // Immediate state update - updates virtual device instantly
+                (expectedBrightness) => {
+                    // Get current virtual device state to preserve other properties
+                    const currentState = {
+                        brightness: expectedBrightness / 255,
+                        hue: values.hue || 0,
+                        saturation: values.saturation || 0,
+                        colorTemperature: values.colorTemperature || 0.5
+                    };
+                    flicApp.virtualDeviceUpdateState('Light', deviceId, currentState);
                 }
-            });
+            );
         }
     }
     
@@ -1587,14 +1633,28 @@ async function handleClimateDeviceUpdate(deviceId, values) {
         const temperature = tempRange.min + (values.position * (tempRange.max - tempRange.min));
         const roundedTemp = Math.round(temperature * 10) / 10; // Round to 1 decimal place
         
-        // Debounce temperature changes to prevent API flooding
-        debouncedDeviceUpdate(deviceId, 'temperature', roundedTemp, async (finalTemp) => {
-            try {
-                await setClimateTemperature(deviceId, finalTemp);
-            } catch (error) {
-                console.error(`❌ Failed to update climate device ${deviceId}:`, error);
+        // Debounce temperature changes but immediately update virtual device state
+        debouncedDeviceUpdate(
+            deviceId, 
+            'temperature', 
+            roundedTemp,
+            // Debounced function - calls HA after delay
+            async (finalTemp) => {
+                try {
+                    await setClimateTemperature(deviceId, finalTemp);
+                } catch (error) {
+                    console.error(`❌ Failed to update climate device ${deviceId}:`, error);
+                }
+            },
+            // Immediate state update - updates virtual device instantly
+            (expectedTemp) => {
+                const tempRange = device.tempRange || HA_CONFIG.valueRanges.climate;
+                const normalizedTemp = (expectedTemp - tempRange.min) / (tempRange.max - tempRange.min);
+                flicApp.virtualDeviceUpdateState('Blind', deviceId, {
+                    position: Math.max(0, Math.min(1, normalizedTemp))
+                });
             }
-        });
+        );
     }
 }
 
@@ -1608,14 +1668,26 @@ async function handleBlindDeviceUpdate(deviceId, values) {
         // Convert position from 0-1 to 0-100 percentage for Home Assistant
         const blindPosition = Math.round(values.position * 100);
         
-        // Debounce blind position changes to prevent motor flooding
-        debouncedDeviceUpdate(deviceId, 'position', blindPosition, async (finalPosition) => {
-            try {
-                await setBlindPosition(deviceId, finalPosition);
-            } catch (error) {
-                console.error(`❌ Failed to update blind device ${deviceId}:`, error);
+        // Debounce blind position changes but immediately update virtual device state
+        debouncedDeviceUpdate(
+            deviceId, 
+            'position', 
+            blindPosition,
+            // Debounced function - calls HA after delay
+            async (finalPosition) => {
+                try {
+                    await setBlindPosition(deviceId, finalPosition);
+                } catch (error) {
+                    console.error(`❌ Failed to update blind device ${deviceId}:`, error);
+                }
+            },
+            // Immediate state update - updates virtual device instantly
+            (expectedPosition) => {
+                flicApp.virtualDeviceUpdateState('Blind', deviceId, {
+                    position: expectedPosition / 100
+                });
             }
-        });
+        );
     }
 }
 
