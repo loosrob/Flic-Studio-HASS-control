@@ -151,7 +151,7 @@ const HA_CONFIG = {
  */
 function sendHARequest(endpoint) {
     const url = `${HA_CONFIG.baseUrl}${endpoint}`;
-    console.log(`🌐 GET ${url}`);
+    // console.log(`🌐 GET ${url}`);
     
     return new Promise((resolve, reject) => {
         const requestOptions = {
@@ -200,7 +200,7 @@ function callHAServiceDirect(domain, service, serviceData = {}) {
     const endpoint = `/api/services/${domain}/${service}`;
     const url = `${HA_CONFIG.baseUrl}${endpoint}`;
     
-    console.log(`🔧 Calling ${domain}.${service}`);
+    // console.log(`🔧 Calling ${domain}.${service}`);
     
     return new Promise((resolve, reject) => {
         const jsonData = JSON.stringify(serviceData);
@@ -231,7 +231,7 @@ function callHAServiceDirect(domain, service, serviceData = {}) {
             const statusCode = (result && (result.statusCode || result.status)) || 200;
             
             if (statusCode >= 200 && statusCode < 300) {
-                console.log(`✅ ${domain}.${service} successful`);
+                // console.log(`✅ ${domain}.${service} successful`);
                 resolve({ success: true, statusCode });
             } else {
                 console.log(`❌ ${domain}.${service} failed: ${statusCode}`);
@@ -584,7 +584,7 @@ async function setLightColor(deviceId, rgbColor) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} color set to RGB(${r}, ${g}, ${b})`);
+            // console.log(`✅ ${device.name} color set to RGB(${r}, ${g}, ${b})`);
             
             // Remember this color immediately (convert RGB to HSV for memory)
             const hsv = rgbToHsv(r, g, b);
@@ -634,7 +634,7 @@ async function setClimateTemperature(deviceId, temperature) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} temperature set to ${clampedTemp}°C`);
+            // console.log(`✅ ${device.name} temperature set to ${clampedTemp}°C`);
             // Update virtual device state
             await getCurrentTemperatureAndUpdate(device);
             return response;
@@ -666,7 +666,7 @@ async function setClimateMode(deviceId, mode) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} HVAC mode set to ${mode}`);
+            // console.log(`✅ ${device.name} HVAC mode set to ${mode}`);
             return response;
         } else {
             throw new Error(`Failed to set HVAC mode for ${device.name}`);
@@ -702,7 +702,7 @@ async function setBlindPosition(deviceId, position) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} position set to ${clampedPosition}%`);
+            // console.log(`✅ ${device.name} position set to ${clampedPosition}%`);
             // Update virtual device state
             await getCurrentBlindPositionAndUpdate(device);
             return response;
@@ -732,7 +732,7 @@ async function setBlindOpen(deviceId) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} opened`);
+            // console.log(`✅ ${device.name} opened`);
             // Update virtual device state
             setTimeout(() => getCurrentBlindPositionAndUpdate(device), 1000); // Delay to allow movement
             return response;
@@ -762,7 +762,7 @@ async function setBlindClose(deviceId) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} closed`);
+            // console.log(`✅ ${device.name} closed`);
             // Update virtual device state
             setTimeout(() => getCurrentBlindPositionAndUpdate(device), 1000); // Delay to allow movement
             return response;
@@ -792,7 +792,7 @@ async function setBlindStop(deviceId) {
         });
         
         if (response.success) {
-            console.log(`✅ ${device.name} stopped`);
+            // console.log(`✅ ${device.name} stopped`);
             return response;
         } else {
             throw new Error(`Failed to stop ${device.name}`);
@@ -915,7 +915,7 @@ async function adjustDeviceVolume(deviceId, delta) {
     
     if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
         const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-        console.log(`⏳ Volume ${delta > 0 ? 'up' : 'down'} ignored - cooldown active (${remainingCooldown}s remaining)`);
+        // console.log(`⏳ Volume ${delta > 0 ? 'up' : 'down'} ignored - cooldown active (${remainingCooldown}s remaining)`);
         return;
     }
     
@@ -955,7 +955,7 @@ async function handleDeviceMuteToggle(deviceId) {
         const newMuteState = !isCurrentlyMuted;
         await setMediaMute(deviceId, newMuteState);
         
-        console.log(`✅ ${device.name} ${newMuteState ? 'muted' : 'unmuted'}`);
+        // console.log(`✅ ${device.name} ${newMuteState ? 'muted' : 'unmuted'}`);
     } catch (error) {
         console.error(`❌ Error toggling mute for ${device.name}:`, error);
     }
@@ -995,7 +995,7 @@ async function handleDevicePowerToggle(deviceId) {
             }
         }
         
-        console.log(`✅ ${device.name} turned ${newPowerState ? 'on' : 'off'}`);
+        // console.log(`✅ ${device.name} turned ${newPowerState ? 'on' : 'off'}`);
     } catch (error) {
         console.error(`❌ Error toggling power for ${device.name}:`, error);
     }
@@ -1021,7 +1021,7 @@ async function handleDevicePowerOn(deviceId) {
         } else if (device.type === 'blind') {
             await setBlindOpen(deviceId);
         }
-        console.log(`✅ ${device.name} turned on`);
+        // console.log(`✅ ${device.name} turned on`);
     } catch (error) {
         console.error(`❌ Error turning on ${device.name}:`, error);
     }
@@ -1047,7 +1047,7 @@ async function handleDevicePowerOff(deviceId) {
         } else if (device.type === 'blind') {
             await setBlindClose(deviceId);
         }
-        console.log(`✅ ${device.name} turned off`);
+        // console.log(`✅ ${device.name} turned off`);
     } catch (error) {
         console.error(`❌ Error turning off ${device.name}:`, error);
     }
@@ -1358,7 +1358,7 @@ async function handlePlaybackDeviceUpdate(deviceId, values) {
         
         if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
             const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-            console.log(`⏳ Playback command ignored - cooldown active (${remainingCooldown}s remaining)`);
+            //console.log(`⏳ Playback command ignored - cooldown active (${remainingCooldown}s remaining)`);
             
             // Reset playback device to center position
             flicApp.virtualDeviceUpdateState('Speaker', deviceId, {
@@ -1375,7 +1375,7 @@ async function handlePlaybackDeviceUpdate(deviceId, values) {
             } else if (volumeChange > 0) {
                 // Twist up/right = Smart play/skip logic
                 const currentState = await getMediaPlaybackState(deviceId);
-                console.log(`📊 Current playback state: ${currentState}`);
+                //console.log(`📊 Current playback state: ${currentState}`);
                 
                 if (currentState === 'paused') {
                     // If paused, resume playback
@@ -1385,7 +1385,7 @@ async function handlePlaybackDeviceUpdate(deviceId, values) {
                     await setMediaNextTrack(deviceId);
                 } else {
                     // For other states (idle, off, etc.), try to start playback
-                    console.log(`📱 Device in ${currentState} state, attempting to start playback`);
+                    //console.log(`📱 Device in ${currentState} state, attempting to start playback`);
                     await setMediaPlay(deviceId);
                 }
             }
@@ -1411,7 +1411,7 @@ async function handleMediaDeviceUpdate(deviceId, values) {
         
         if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
             const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-            console.log(`⏳ Volume change ignored - cooldown active (${remainingCooldown}s remaining)`);
+            //console.log(`⏳ Volume change ignored - cooldown active (${remainingCooldown}s remaining)`);
             return;
         }
         
@@ -1563,7 +1563,7 @@ async function applyColorUpdate(deviceId, colorUpdate) {
             const remembered = getRememberedColor(deviceId, finalHue, newSat);
             if (colorUpdate.hue === undefined) { // Only use remembered hue if hue wasn't explicitly changed
                 finalHue = remembered.hue;
-                console.log(`🎨 Restoring from white: using remembered hue ${finalHue}° instead of current ${currentHue}° (current sat ${currentSat}% <= ${MEANINGFUL_SATURATION_THRESHOLD}%)`);
+                //console.log(`🎨 Restoring from white: using remembered hue ${finalHue}° instead of current ${currentHue}° (current sat ${currentSat}% <= ${MEANINGFUL_SATURATION_THRESHOLD}%)`);
             }
         }
         
@@ -1584,7 +1584,7 @@ async function applyColorUpdate(deviceId, colorUpdate) {
         ...colorData
     });
     
-    console.log(`✅ ${device.name} color updated (debounced)`);
+    //console.log(`✅ ${device.name} color updated (debounced)`);
     
     // Wait a moment for Home Assistant to update the state
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -1608,7 +1608,7 @@ async function applyColorTemperatureUpdate(deviceId, colorTemperature) {
         color_temp: mireds
     });
     
-    console.log(`✅ ${device.name} color temperature updated (debounced)`);
+    //console.log(`✅ ${device.name} color temperature updated (debounced)`);
     
     // Wait a moment for Home Assistant to update the state
     await new Promise(resolve => setTimeout(resolve, 100));
