@@ -282,185 +282,97 @@ async function callHAService(domain, service, serviceData = {}) {
 }
 
 /**
- * Set volume for a media device
- * @param {string} deviceId - Device identifier
- * @param {number} volume - Volume level (0-100)
- * @returns {Promise} - Response promise
+ * Universal device action handler - reduces repetitive service call patterns
+ * @param {Object} device - Device configuration
+ * @param {string} domain - HA domain (media_player, light, climate, cover)
+ * @param {string} service - HA service name
+ * @param {Object} data - Service data
+ * @param {string} successMsg - Success message
+ * @param {Function} onSuccess - Optional callback after success
+ * @returns {Promise} - Service response
  */
-async function setMediaVolume(deviceId, volume) {
-    const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
-    
-    // Convert percentage to 0-1 range for Home Assistant
-    const volumeLevel = volume / 100;
-    
+async function executeDeviceAction(device, domain, service, data = {}, successMsg = '', onSuccess = null) {
     try {
-        const response = await callHAService('media_player', 'volume_set', {
+        const response = await callHAService(domain, service, {
             entity_id: device.entityId,
-            volume_level: volumeLevel
+            ...data
         });
         
         if (response.success) {
-            // Get actual volume from device and update virtual device state
-            await getCurrentVolumeAndUpdate(device);
-            
+            if (successMsg) console.log(`✅ ${device.name} ${successMsg}`);
+            if (onSuccess) await onSuccess(device);
             return response;
         } else {
-            throw new Error(`Failed to set volume for ${device.name}`);
+            throw new Error(`Failed to ${service} for ${device.name}`);
         }
     } catch (error) {
-        console.error(`❌ Error setting volume for ${device.name}:`, error);
+        console.error(`❌ Error ${service} for ${device.name}:`, error);
         throw error;
     }
+}
+
+/**
+ * Set volume for a media device
+ */
+async function setMediaVolume(deviceId, volume) {
+    const device = findDevice(deviceId);
+    if (!device) throw new Error(`Device ${deviceId} not found`);
+    
+    const volumeLevel = volume / 100; // Convert percentage to 0-1 range
+    return executeDeviceAction(device, 'media_player', 'volume_set', 
+        { volume_level: volumeLevel }, '', () => getCurrentVolumeAndUpdate(device));
 }
 
 /**
  * Set power state for a media device
- * @param {string} deviceId - Device identifier
- * @param {boolean} powerOn - True to turn on, false to turn off
- * @returns {Promise} - Response promise
  */
 async function setMediaPower(deviceId, powerOn) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
     const service = powerOn ? 'turn_on' : 'turn_off';
-    
-    try {
-        const response = await callHAService('media_player', service, {
-            entity_id: device.entityId
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} power ${powerOn ? 'on' : 'off'}`);
-            return response;
-        } else {
-            throw new Error(`Failed to set power for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`Error setting power for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'media_player', service, {}, `power ${powerOn ? 'on' : 'off'}`);
 }
 
 /**
  * Set mute state for a media device
- * @param {string} deviceId - Device identifier
- * @param {boolean} muted - True to mute, false to unmute
- * @returns {Promise} - Response promise
  */
 async function setMediaMute(deviceId, muted) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
-    const service = muted ? 'volume_mute' : 'volume_mute';
-    
-    try {
-        const response = await callHAService('media_player', service, {
-            entity_id: device.entityId,
-            is_volume_muted: muted
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} ${muted ? 'muted' : 'unmuted'}`);
-            return response;
-        } else {
-            throw new Error(`Failed to set mute for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`Error setting mute for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'media_player', 'volume_mute', 
+        { is_volume_muted: muted }, `${muted ? 'muted' : 'unmuted'}`);
 }
 
 /**
  * Pause media playback
- * @param {string} deviceId - Device identifier
- * @returns {Promise} - Response promise
  */
 async function setMediaPause(deviceId) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
-    try {
-        const response = await callHAService('media_player', 'media_pause', {
-            entity_id: device.entityId
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} playback paused`);
-            return response;
-        } else {
-            throw new Error(`Failed to pause playback for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error pausing playback for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'media_player', 'media_pause', {}, 'playback paused');
 }
 
 /**
  * Resume/play media playback
- * @param {string} deviceId - Device identifier
- * @returns {Promise} - Response promise
  */
 async function setMediaPlay(deviceId) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
-    try {
-        const response = await callHAService('media_player', 'media_play', {
-            entity_id: device.entityId
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} playback resumed`);
-            return response;
-        } else {
-            throw new Error(`Failed to resume playback for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error resuming playback for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'media_player', 'media_play', {}, 'playback resumed');
 }
 
 /**
  * Skip to next track
- * @param {string} deviceId - Device identifier
- * @returns {Promise} - Response promise
  */
 async function setMediaNextTrack(deviceId) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
-    try {
-        const response = await callHAService('media_player', 'media_next_track', {
-            entity_id: device.entityId
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} skipped to next track`);
-            return response;
-        } else {
-            throw new Error(`Failed to skip track for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error skipping track for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'media_player', 'media_next_track', {}, 'skipped to next track');
 }
 
 /**
@@ -613,64 +525,24 @@ function getRememberedColor(deviceId, fallbackHue = 0, fallbackSat = 100) {
  */
 async function setLightBrightness(deviceId, brightness) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
-    // Clamp brightness to valid range
     const clampedBrightness = Math.max(0, Math.min(255, Math.round(brightness)));
-    
-    try {
-        const response = await callHAService('light', 'turn_on', {
-            entity_id: device.entityId,
-            brightness: clampedBrightness
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} brightness set to ${clampedBrightness}`);
-            // Update virtual device state
-            await getCurrentBrightnessAndUpdate(device);
-            return response;
-        } else {
-            throw new Error(`Failed to set brightness for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error setting brightness for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'light', 'turn_on', 
+        { brightness: clampedBrightness }, `brightness set to ${clampedBrightness}`,
+        () => getCurrentBrightnessAndUpdate(device));
 }
 
 /**
  * Set power state for a light device
- * @param {string} deviceId - Device identifier
- * @param {boolean} powerOn - True to turn on, false to turn off
- * @returns {Promise} - Response promise
  */
 async function setLightPower(deviceId, powerOn) {
     const device = findDevice(deviceId);
-    if (!device) {
-        throw new Error(`Device ${deviceId} not found`);
-    }
+    if (!device) throw new Error(`Device ${deviceId} not found`);
     
     const service = powerOn ? 'turn_on' : 'turn_off';
-    
-    try {
-        const response = await callHAService('light', service, {
-            entity_id: device.entityId
-        });
-        
-        if (response.success) {
-            console.log(`✅ ${device.name} turned ${powerOn ? 'on' : 'off'}`);
-            // Update virtual device state
-            await getCurrentBrightnessAndUpdate(device);
-            return response;
-        } else {
-            throw new Error(`Failed to set power for ${device.name}`);
-        }
-    } catch (error) {
-        console.error(`❌ Error setting power for ${device.name}:`, error);
-        throw error;
-    }
+    return executeDeviceAction(device, 'light', service, {}, 
+        `turned ${powerOn ? 'on' : 'off'}`, () => getCurrentBrightnessAndUpdate(device));
 }
 
 /**
@@ -942,6 +814,9 @@ async function getMediaPlaybackState(deviceId) {
 let lastPlaybackCommandTime = 0;
 const PLAYBACK_COOLDOWN_MS = 2500; // 2.5 seconds
 
+// Action mapping for simplified command handling (defined after handlers)
+let ACTION_HANDLERS;
+
 // Handle action messages from Flic app
 flicApp.on('actionMessage', async (message) => {
     console.log('Received action message:', message);
@@ -960,81 +835,12 @@ flicApp.on('actionMessage', async (message) => {
         }
         
         try {
-            // Handle device-specific actions
-            switch (action) {
-                // Media device actions
-                case 'volume up':
-                    await handleDeviceVolumeUp(deviceId);
-                    break;
-                case 'volume down':
-                    await handleDeviceVolumeDown(deviceId);
-                    break;
-                case 'mute':
-                    await handleDeviceMuteToggle(deviceId);
-                    break;
-                
-                // Light device actions
-                case 'brightness up':
-                    await handleDeviceBrightnessUp(deviceId);
-                    break;
-                case 'brightness down':
-                    await handleDeviceBrightnessDown(deviceId);
-                    break;
-                case 'bright':
-                    await handleDeviceSetBright(deviceId);
-                    break;
-                case 'dim':
-                    await handleDeviceSetDim(deviceId);
-                    break;
-                
-                // Climate device actions
-                case 'temp up':
-                    await handleDeviceTemperatureUp(deviceId);
-                    break;
-                case 'temp down':
-                    await handleDeviceTemperatureDown(deviceId);
-                    break;
-                case 'heat':
-                    await handleDeviceSetMode(deviceId, 'heat');
-                    break;
-                case 'cool':
-                    await handleDeviceSetMode(deviceId, 'cool');
-                    break;
-                case 'auto':
-                    await handleDeviceSetMode(deviceId, 'auto');
-                    break;
-                
-                // Blind device actions
-                case 'open':
-                    await handleDeviceBlindOpen(deviceId);
-                    break;
-                case 'close':
-                    await handleDeviceBlindClose(deviceId);
-                    break;
-                case 'stop':
-                    await handleDeviceBlindStop(deviceId);
-                    break;
-                case 'position up':
-                    await handleDeviceBlindUp(deviceId);
-                    break;
-                case 'position down':
-                    await handleDeviceBlindDown(deviceId);
-                    break;
-                
-                // Universal device actions (all device types support these)
-                case 'power':
-                    await handleDevicePowerToggle(deviceId);
-                    break;
-                case 'on':
-                    await handleDevicePowerOn(deviceId);
-                    break;
-                case 'off':
-                    await handleDevicePowerOff(deviceId);
-                    break;
-                
-                default:
-                    console.log(`Unknown action for device ${deviceId}: ${action}`);
-                    break;
+            // Use action mapping for simplified handling
+            const handler = ACTION_HANDLERS[action];
+            if (handler) {
+                await handler(deviceId);
+            } else {
+                console.log(`Unknown action for device ${deviceId}: ${action}`);
             }
         } catch (error) {
             console.error(`❌ Error executing action "${action}" for device ${deviceId}:`, error);
@@ -1083,16 +889,16 @@ flicApp.on('virtualDeviceUpdate', async (metaData, values) => {
 // ============================================================================
 
 /**
- * Handle volume up for specific device
+ * Generic volume adjustment with cooldown protection
  */
-async function handleDeviceVolumeUp(deviceId) {
+async function adjustDeviceVolume(deviceId, delta) {
     // Check cooldown
     const currentTime = Date.now();
     const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
     
     if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
         const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-        console.log(`⏳ Volume up ignored - cooldown active (${remainingCooldown}s remaining)`);
+        console.log(`⏳ Volume ${delta > 0 ? 'up' : 'down'} ignored - cooldown active (${remainingCooldown}s remaining)`);
         return;
     }
     
@@ -1103,46 +909,13 @@ async function handleDeviceVolumeUp(deviceId) {
     }
     
     try {
-        // Get current volume
         const stateData = await getEntityState(device.entityId);
-        const currentVolume = stateData.attributes.volume_level * 100; // Convert to percentage
-        const newVolume = Math.min(100, currentVolume + 10);
+        const currentVolume = stateData.attributes.volume_level * 100;
+        const newVolume = Math.max(0, Math.min(100, currentVolume + delta));
         
         await setMediaVolume(deviceId, newVolume);
     } catch (error) {
-        console.error(`❌ Error increasing volume for ${device.name}:`, error);
-    }
-}
-
-/**
- * Handle volume down for specific device
- */
-async function handleDeviceVolumeDown(deviceId) {
-    // Check cooldown
-    const currentTime = Date.now();
-    const timeSinceLastCommand = currentTime - lastPlaybackCommandTime;
-    
-    if (timeSinceLastCommand < PLAYBACK_COOLDOWN_MS) {
-        const remainingCooldown = Math.ceil((PLAYBACK_COOLDOWN_MS - timeSinceLastCommand) / 1000);
-        console.log(`⏳ Volume down ignored - cooldown active (${remainingCooldown}s remaining)`);
-        return;
-    }
-    
-    const device = findDevice(deviceId);
-    if (!device) {
-        console.error(`Device not found: ${deviceId}`);
-        return;
-    }
-    
-    try {
-        // Get current volume
-        const stateData = await getEntityState(device.entityId);
-        const currentVolume = stateData.attributes.volume_level * 100; // Convert to percentage
-        const newVolume = Math.max(0, currentVolume - 10);
-        
-        await setMediaVolume(deviceId, newVolume);
-    } catch (error) {
-        console.error(`❌ Error decreasing volume for ${device.name}:`, error);
+        console.error(`❌ Error adjusting volume for ${device.name}:`, error);
     }
 }
 
@@ -1506,6 +1279,43 @@ async function handleDeviceBlindDown(deviceId) {
         console.error(`❌ Error moving down ${device.name}:`, error);
     }
 }
+
+// Initialize ACTION_HANDLERS after all handler functions are defined
+ACTION_HANDLERS = {
+    // Media device actions
+    'volume up': deviceId => adjustDeviceVolume(deviceId, 10),
+    'volume down': deviceId => adjustDeviceVolume(deviceId, -10),
+    'mute': handleDeviceMuteToggle,
+    
+    // Light device actions
+    'brightness up': handleDeviceBrightnessUp,
+    'brightness down': handleDeviceBrightnessDown,
+    'bright': handleDeviceSetBright,
+    'dim': handleDeviceSetDim,
+    
+    // Climate device actions
+    'temp up': handleDeviceTemperatureUp,
+    'temp down': handleDeviceTemperatureDown,
+    'heat': deviceId => handleDeviceSetMode(deviceId, 'heat'),
+    'cool': deviceId => handleDeviceSetMode(deviceId, 'cool'),
+    'auto': deviceId => handleDeviceSetMode(deviceId, 'auto'),
+    
+    // Blind device actions
+    'open': handleDeviceBlindOpen,
+    'close': handleDeviceBlindClose,
+    'stop': handleDeviceBlindStop,
+    'position up': handleDeviceBlindUp,
+    'position down': handleDeviceBlindDown,
+    
+    // Universal device actions
+    'power': handleDevicePowerToggle,
+    'on': handleDevicePowerOn,
+    'off': handleDevicePowerOff
+};
+
+// ============================================================================
+// DEVICE UPDATE HANDLERS
+// ============================================================================
 
 /**
  * Handle media device updates for volume control
@@ -1970,27 +1780,25 @@ async function getCurrentBlindPositionAndUpdate(device) {
     }
 }
 
+// Device type to virtual device type mapping
+const VIRTUAL_DEVICE_TYPES = {
+    'media_player': 'Speaker',
+    'playback': 'Speaker',
+    'light': 'Light',
+    'color_light': 'Light',
+    'climate': 'Blind',
+    'blind': 'Blind'
+};
+
 /**
  * Create virtual devices for Flic Twist integration
  */
 function createVirtualDevices() {
     console.log('🎛️ Creating virtual devices...');
     
-    // Create virtual devices for all device categories
     Object.values(HA_CONFIG.devices).flat().forEach(device => {
-        let virtualDeviceType = 'Speaker'; // Default for media devices
-        
-        if (device.type === 'media_player' || device.type === 'playback') {
-            virtualDeviceType = 'Speaker';
-        } else if (device.type === 'light' || device.type === 'color_light') {
-            virtualDeviceType = 'Light';
-        } else if (device.type === 'climate') {
-            virtualDeviceType = 'Blind'; // Use Blind for position-based temperature control
-        } else if (device.type === 'blind') {
-            virtualDeviceType = 'Blind'; // Use Blind for position-based blind control
-        }
-        
-        const virtualDevice = flicApp.createVirtualDevice(device.id, virtualDeviceType, device.name);
+        const virtualDeviceType = VIRTUAL_DEVICE_TYPES[device.type] || 'Speaker';
+        flicApp.createVirtualDevice(device.id, virtualDeviceType, device.name);
         console.log(`✅ Created virtual device: ${device.name} (${virtualDeviceType})`);
     });
 }
